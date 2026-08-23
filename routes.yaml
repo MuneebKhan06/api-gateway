@@ -1,0 +1,60 @@
+# Route table for the gateway.
+#
+# Requests are matched against path_prefix, longest prefix first. A route with
+# no upstream is served by the gateway itself.
+
+routes:
+  - path_prefix: /api/orders
+    upstream: http://service-a:8001
+    strip_prefix: true
+    timeout_seconds: 30
+    auth_required: true
+    circuit_breaker: true
+    rate_limit:
+      algorithm: token_bucket
+      requests: 100
+      window_seconds: 60
+
+  - path_prefix: /api/users
+    upstream: http://service-b:8002
+    strip_prefix: true
+    timeout_seconds: 10
+    auth_required: true
+    circuit_breaker: true
+    rate_limit:
+      algorithm: sliding_window
+      requests: 50
+      window_seconds: 60
+
+  - path_prefix: /api/inventory
+    upstream: http://service-c:8003
+    strip_prefix: true
+    timeout_seconds: 15
+    auth_required: true
+    circuit_breaker: true
+    rate_limit:
+      algorithm: fixed_window
+      requests: 200
+      window_seconds: 60
+
+  - path_prefix: /health
+    upstream: null
+    strip_prefix: false
+    auth_required: false
+    circuit_breaker: false
+
+  - path_prefix: /metrics
+    upstream: null
+    strip_prefix: false
+    auth_required: false
+    circuit_breaker: false
+
+  - path_prefix: /auth
+    upstream: null
+    strip_prefix: false
+    auth_required: false
+    circuit_breaker: false
+    rate_limit:
+      algorithm: fixed_window
+      requests: 20
+      window_seconds: 60
