@@ -14,8 +14,11 @@ def test_health_reports_loaded_routes():
         response = client.get("/health")
         assert response.status_code == 200
         body = response.json()
-        assert body["status"] == "healthy"
         assert body["routes_loaded"] > 0
+        # No upstreams are running for this app, so it reports degraded and
+        # still answers 200. See tests/test_health.py for the healthy path.
+        assert body["status"] == "degraded"
+        assert set(body["upstreams"]) == {"service-a", "service-b", "service-c"}
 
 
 def test_routes_endpoint_lists_the_table():

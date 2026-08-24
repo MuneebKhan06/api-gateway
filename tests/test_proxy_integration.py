@@ -92,7 +92,8 @@ class TestGatewayErrors:
 
 class TestGatewayOwnedRoutesStillWin:
     def test_health_is_not_swallowed_by_the_catch_all(self, gateway):
-        assert gateway.get("/health").json()["status"] == "healthy"
+        # The gateway's own health body, not an upstream's.
+        assert "routes_loaded" in gateway.get("/health").json()
 
     def test_route_listing_is_not_swallowed_by_the_catch_all(self, gateway):
         assert gateway.get("/gateway/routes").status_code == 200

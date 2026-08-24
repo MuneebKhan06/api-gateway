@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from gateway.config import Settings, get_settings
+from gateway.health import check_upstreams, overall_status
 from gateway.logging_config import configure_logging
 from gateway.middleware.correlation import CorrelationIdMiddleware, get_request_id
 from gateway.proxy import ReverseProxy, UpstreamTimeout, UpstreamUnavailable
@@ -88,14 +89,17 @@ def create_app(settings: Settings | None = None, proxy: ReverseProxy | None = No
 
     @app.get("/health", tags=["gateway"])
     async def health() -> dict:
-        """Liveness check.
+        """Health check.
 
-        Dependency checks (Redis, Postgres, upstreams) are added as those
-        components are wired in.
+        Reports the gateway plus every upstream it knows about. Redis and
+        Postgres are added here once they are wired in.
         """
+        routes = app.state.route_table.all()
+        upstreams = await check_upstreams(app.state.proxy, routes)
         return {
-            "status": "healthy",
-            "routes_loaded": len(app.state.route_table.all()),
+            "status": overall_status(upstreams),
+            "routes_loaded": len(routes),
+            "upstreams": upstreams,
         }
 
     @app.get("/gateway/routes", tags=["gateway"], response_model=list[RouteStatus])
