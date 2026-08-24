@@ -1,0 +1,103 @@
+# Local development stack.
+#
+# Prometheus and Grafana are added in the observability pass; for now this is
+# the gateway, the three upstreams it proxies to, and the two data stores the
+# auth and rate limiting work will need.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: gateway-redis
+    ports:
+      - "6379:6379"
+    # appendonly keeps rate limit counters across a container restart, which
+    # makes local testing behave more like a real deployment.
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: gateway-postgres
+    environment:
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: gateway
+      POSTGRES_DB: gateway
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  service-a:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.upstream
+    container_name: gateway-service-a
+    environment:
+      SERVICE_MODULE: upstream.service_a.main:app
+      SERVICE_PORT: 8001
+    ports:
+      - "8001:8001"
+
+  service-b:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.upstream
+    container_name: gateway-service-b
+    environment:
+      SERVICE_MODULE: upstream.service_b.main:app
+      SERVICE_PORT: 8002
+    ports:
+      - "8002:8002"
+
+  service-c:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.upstream
+    container_name: gateway-service-c
+    environment:
+      SERVICE_MODULE: upstream.service_c.main:app
+      SERVICE_PORT: 8003
+    ports:
+      - "8003:8003"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway
+    container_name: gateway
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: development
+      LOG_LEVEL: INFO
+      ROUTES_FILE: routes.yaml
+      # Service names resolve over the compose network, which is why
+      # routes.yaml can refer to http://service-a:8001 directly.
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://gateway:gateway@postgres:5432/gateway
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      service-a:
+        condition: service_started
+      service-b:
+        condition: service_started
+      service-c:
+        condition: service_started
+
+volumes:
+  redis-data:
+  postgres-data:
