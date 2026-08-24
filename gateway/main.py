@@ -14,6 +14,7 @@ from fastapi import FastAPI
 
 from gateway.config import Settings, get_settings
 from gateway.logging_config import configure_logging
+from gateway.middleware.correlation import CorrelationIdMiddleware
 from gateway.router import RouteTable, build_route_table
 from gateway.schemas.gateway import RouteStatus
 
@@ -61,6 +62,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+
+    # Outermost middleware, so every log line and every response carries the
+    # request ID even if something further in the chain rejects the request.
+    app.add_middleware(CorrelationIdMiddleware)
 
     @app.get("/health", tags=["gateway"])
     async def health() -> dict:
