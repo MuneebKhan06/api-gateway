@@ -108,9 +108,17 @@ class ReverseProxy:
     away every time and pays a fresh TCP and TLS handshake on each hop.
     """
 
-    def __init__(self, max_connections: int = 100, default_timeout: float = 30.0) -> None:
+    def __init__(
+        self,
+        max_connections: int = 100,
+        default_timeout: float = 30.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self._max_connections = max_connections
         self._default_timeout = default_timeout
+        # Overriding the transport is how the tests point the proxy at the
+        # mock upstreams without binding a real port.
+        self._transport = transport
         self._client: httpx.AsyncClient | None = None
 
     async def startup(self) -> None:
@@ -121,6 +129,7 @@ class ReverseProxy:
         self._client = httpx.AsyncClient(
             limits=limits,
             timeout=self._default_timeout,
+            transport=self._transport,
             # The gateway decides what a redirect means, not httpx. Forwarding
             # the 302 to the client keeps the Location header meaningful.
             follow_redirects=False,

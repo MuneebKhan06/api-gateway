@@ -1,10 +1,13 @@
 import uuid
 
 from fastapi.testclient import TestClient
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from gateway.config import Settings
 from gateway.main import create_app
-from gateway.middleware.correlation import get_request_id
+from gateway.middleware.correlation import CorrelationIdMiddleware, get_request_id
 
 
 def make_client() -> TestClient:
@@ -45,14 +48,20 @@ def test_overlong_client_id_is_replaced():
 
 
 def test_id_is_readable_from_the_handler():
-    seen = {}
-    settings = Settings(routes_file="routes.yaml", environment="test")
-    app = create_app(settings)
+    """The handler sees the same ID that goes out on the response.
 
-    @app.get("/_probe")
-    async def probe() -> dict:
+    Built as a bare app rather than the gateway app because the gateway
+    registers a catch-all proxy route that would swallow a probe endpoint.
+    """
+    seen = {}
+
+    async def probe(request):
         seen["from_contextvar"] = get_request_id()
-        return {"ok": True}
+        return JSONResponse({"ok": True})
+
+    app = CorrelationIdMiddleware(
+        Starlette(routes=[Route("/_probe", probe)]),
+    )
 
     with TestClient(app) as client:
         response = client.get("/_probe")

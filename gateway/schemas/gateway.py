@@ -60,3 +60,16 @@ class RouteStatus(BaseModel):
     auth_required: bool
     circuit_breaker_state: str
     rate_limit_algorithm: str | None
+
+
+class GatewayError(BaseModel):
+    """Error envelope for failures the gateway itself produces.
+
+    Upstream error bodies are passed through untouched. This shape only
+    applies when the gateway is the one refusing or failing the request, so a
+    client can tell "the gateway said no" from "the service said no".
+    """
+
+    error: str
+    detail: str
+    request_id: str | None = None
