@@ -8,8 +8,6 @@ import time
 
 import pytest
 
-from gateway.auth.blacklist import TokenBlacklist
-
 CREDENTIALS = {"email": "muneeb@example.com", "password": "password123"}
 
 

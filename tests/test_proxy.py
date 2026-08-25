@@ -4,8 +4,6 @@ import pytest
 from gateway.proxy import (
     HOP_BY_HOP_HEADERS,
     ReverseProxy,
-    UpstreamTimeout,
-    UpstreamUnavailable,
     build_target,
     filter_request_headers,
     filter_response_headers,

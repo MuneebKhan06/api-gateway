@@ -8,6 +8,7 @@ container. The integration suite covers the Postgres path.
 from datetime import timedelta
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from gateway.db.connection import Database
 from gateway.db.models import utcnow
@@ -57,7 +58,9 @@ class TestUserRepository:
         async with db.session() as session:
             await UserRepository(session).create("dup@example.com", "h")
 
-        with pytest.raises(Exception):
+        # The unique index is what enforces this, so the database is expected
+        # to raise rather than the repository checking first and racing.
+        with pytest.raises(IntegrityError):
             async with db.session() as session:
                 await UserRepository(session).create("dup@example.com", "h")
 

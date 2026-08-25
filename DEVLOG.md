@@ -126,3 +126,96 @@ tomorrow.
 
 72 tests passing. Tomorrow: Postgres models, JWT issuing and validation, and
 the token blacklist.
+
+## Day 3
+
+Auth day. Users, tokens, blacklist, and the middleware that enforces it.
+
+**Environment first.** Finally created the venv and installed everything from
+requirements-dev.txt. Should have done this on Day 1 rather than working
+against whatever the system Python happened to have.
+
+**passlib is dead, use bcrypt directly.** requirements.txt said
+`passlib[bcrypt]` and it blew up immediately: passlib 1.7.4 probes bcrypt for
+a `__about__.__version__` attribute that bcrypt 4.1 removed, then falls over
+on a length check it should be handling itself. passlib has had no release
+since 2020.
+
+The choice was pin bcrypt backwards to keep a dead abstraction alive, or call
+bcrypt directly. Went with calling it directly. It cost about fifteen lines
+and removed a dependency that is not coming back.
+
+Kept the 72 byte cap as an explicit schema rule rather than truncating
+silently. bcrypt ignores anything past 72 bytes, which means two long
+passwords sharing a prefix would be interchangeable. Better to refuse the
+password than to quietly weaken it.
+
+**Access and refresh tokens.** The `typ` claim is the part that matters. It
+would be easy to sign both token types identically and validate them the same
+way, and that would mean a refresh token works as an access token, handing a
+7 day credential to every request. `decode_access` refuses anything that is
+not typed as an access token, and there is a test for it.
+
+Also tested the alg=none forgery explicitly. PyJWT rejects it because the
+algorithm list is passed on decode, but that is exactly the kind of thing
+that silently regresses if someone later "simplifies" the decode call.
+
+**Refresh rotation.** Refreshing revokes the token that was used. If a
+refresh token leaks, it is only good until the real client next refreshes,
+and after that the attacker's copy is dead. The database row is what makes
+this real: signature validity alone cannot express "already spent".
+
+**The blacklist.** This is the piece that makes logout mean something. A JWT
+is valid until it expires, by design. Without a server side record, logout
+deletes the token from the client and changes nothing for anyone who copied
+it. Now logout writes the jti to Redis with a TTL matching the token's own
+expiry, and the middleware checks it.
+
+Decided it fails open. If Redis is unreachable, `contains()` logs an error and
+returns False rather than rejecting everything. Failing closed would turn a
+Redis blip into a total gateway outage, which is a worse failure than briefly
+honouring a token someone logged out of. The exposure is bounded by the 15
+minute access token TTL.
+
+**Middleware ordering.** Validation runs cheapest first: route lookup, then
+presence of a bearer token, then signature and expiry, and only then the
+Redis blacklist lookup. Putting the Redis call earlier would let anyone
+generate gateway Redis traffic by sending garbage tokens.
+
+One thing I nearly got wrong: the middleware originally answered 401 for
+paths that matched no route at all. That means an unknown URL reports itself
+as protected, which leaks which paths exist. Now an unmatched path falls
+through to the proxy layer and gets its 404.
+
+**Timing attacks on login.** An unknown email returns without hashing
+anything, which makes it measurably faster than a known email with a wrong
+password. That difference is enough to enumerate accounts. Now the unknown
+email path hashes a throwaway password so both take about the same time.
+
+**Identity forwarding.** The upstream should not have to decode the JWT
+again, so the gateway passes the caller as X-Gateway-User-Id, -Email and
+-Roles. The part that makes those headers worth anything is that the same
+names are stripped from the incoming request first. If a client could set
+X-Gateway-User-Id itself, an upstream trusting it would be trivially
+bypassable. There are tests that send spoofed values and check they are
+replaced.
+
+**SQLite in tests.** The models avoid Postgres specific types so the suite
+runs against SQLite with no container. That surfaced one real portability
+bug: SQLite has no timezone type and returns naive datetimes even from a
+`DateTime(timezone=True)` column, so comparing against an aware `utcnow()`
+raised. Added `as_aware_utc()` on the model rather than patching the test,
+because the fix belongs at the boundary where the value is read back.
+
+Also had to switch the test database from `:memory:` to a temp file. An
+in-memory SQLite database is scoped to one connection, and the app opens its
+own, so it kept finding an empty schema.
+
+**Health.** Now reports three states instead of two. `degraded` means an
+upstream is down but the gateway still serves every other route. `unhealthy`
+means Redis or Postgres is gone, so nothing can be authenticated or rate
+limited. Dependency failure outranks upstream failure, otherwise a gateway
+that cannot authenticate anyone would report itself as merely degraded.
+
+167 tests passing. Tomorrow: rate limiting, all three algorithms, with Lua
+for atomicity.

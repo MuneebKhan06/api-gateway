@@ -26,6 +26,15 @@ from gateway.schemas.gateway import RouteConfig
 
 logger = logging.getLogger(__name__)
 
+# Identity of the authenticated caller, handed to the upstream so it does not
+# have to parse the JWT again. Named with the gateway's own prefix so there is
+# no chance of colliding with something the upstream already uses.
+USER_ID_HEADER = "x-gateway-user-id"
+USER_EMAIL_HEADER = "x-gateway-user-email"
+USER_ROLES_HEADER = "x-gateway-user-roles"
+
+IDENTITY_HEADERS = frozenset({USER_ID_HEADER, USER_EMAIL_HEADER, USER_ROLES_HEADER})
+
 # Headers that apply to one connection only and must be dropped at each hop.
 HOP_BY_HOP_HEADERS = frozenset(
     {
@@ -81,14 +90,40 @@ def build_target(route: RouteConfig, path: str, query: str = "") -> ProxyTarget:
 
 
 def filter_request_headers(headers: httpx.Headers | dict, upstream_host: str) -> dict[str, str]:
-    """Strip hop-by-hop headers and rewrite Host for the upstream."""
+    """Strip hop-by-hop headers and rewrite Host for the upstream.
+
+    Client supplied identity headers are stripped too. An upstream that trusts
+    X-Gateway-User-Id must be able to assume the gateway set it, so a client
+    sending its own copy has to be discarded here rather than forwarded. This
+    is the difference between a header the upstream can trust and one anybody
+    can forge.
+    """
     cleaned = {
         key: value
         for key, value in dict(headers).items()
-        if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() != "host"
+        if key.lower() not in HOP_BY_HOP_HEADERS
+        and key.lower() != "host"
+        and key.lower() not in IDENTITY_HEADERS
     }
     cleaned["host"] = upstream_host
     return cleaned
+
+
+def identity_headers(user: dict | None) -> dict[str, str]:
+    """Build the identity headers for an authenticated caller.
+
+    Returns nothing for an unauthenticated request, so an open route forwards
+    no identity at all rather than an empty one.
+    """
+    if not user:
+        return {}
+
+    return {
+        USER_ID_HEADER: str(user.get("id", "")),
+        USER_EMAIL_HEADER: str(user.get("email", "")),
+        # Comma separated, since a header cannot carry a list.
+        USER_ROLES_HEADER: ",".join(user.get("roles") or []),
+    }
 
 
 def filter_response_headers(headers: httpx.Headers) -> dict[str, str]:
@@ -155,6 +190,9 @@ class ReverseProxy:
         headers = filter_request_headers(request.headers, upstream_host)
         # Let the upstream log against the same request ID we are using.
         headers[REQUEST_ID_HEADER] = get_request_id()
+        # The auth middleware puts the caller on the scope when a route is
+        # protected. Passing it on saves the upstream a second JWT decode.
+        headers.update(identity_headers(request.scope.get("user")))
 
         body = await request.body()
 

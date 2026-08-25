@@ -1,4 +1,3 @@
-import pytest
 
 from gateway.health import distinct_upstreams, overall_status
 from gateway.schemas.gateway import RouteConfig

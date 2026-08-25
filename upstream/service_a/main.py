@@ -8,7 +8,7 @@ circuit breaker gets exercised without taking a container down.
 import asyncio
 import uuid
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 
 SERVICE_NAME = "service-a"
 
@@ -26,7 +26,7 @@ _state = {"fail": False, "latency_ms": 0}
 
 @app.middleware("http")
 async def inject_faults(request, call_next):
-    if request.url.path.startswith("/_control"):
+    if request.url.path.startswith(("/_control", "/_echo")):
         return await call_next(request)
 
     if _state["latency_ms"]:
@@ -68,6 +68,16 @@ async def create_order(payload: dict) -> dict:
     }
     ORDERS.append(order)
     return order
+
+
+@app.get("/_echo/headers")
+async def echo_headers(request: Request) -> dict:
+    """Report what the upstream actually received.
+
+    Used to check that the gateway forwards the caller's identity and strips
+    anything the client tried to spoof.
+    """
+    return {"headers": {key.lower(): value for key, value in request.headers.items()}}
 
 
 @app.post("/_control/fail")

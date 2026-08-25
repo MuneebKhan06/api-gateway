@@ -74,7 +74,9 @@ async def check_dependencies(redis_client, database) -> dict[str, str]:
     }
 
 
-def overall_status(upstream_states: dict[str, str], dependencies: dict[str, str] | None = None) -> str:
+def overall_status(
+    upstream_states: dict[str, str], dependencies: dict[str, str] | None = None
+) -> str:
     """Report healthy, degraded or unhealthy.
 
     The distinction matters to whatever is polling this:
