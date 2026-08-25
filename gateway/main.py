@@ -18,6 +18,8 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from gateway.auth.routes import build_jwt_handler
+from gateway.auth.routes import router as auth_router
 from gateway.config import Settings, get_settings
 from gateway.db.connection import Database
 from gateway.health import check_dependencies, check_upstreams, overall_status
@@ -73,6 +75,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     database = getattr(app.state, "database", None) or Database(settings.database_url)
     await database.startup()
     app.state.database = database
+
+    app.state.jwt_handler = build_jwt_handler(settings)
 
     logger.info("Gateway started in %s mode", settings.environment)
     try:
@@ -147,6 +151,9 @@ def create_app(
             )
             for route in app.state.route_table.all()
         ]
+
+    # Registered before the catch-all so /auth is served here, not proxied.
+    app.include_router(auth_router)
 
     _register_error_handlers(app)
     _register_proxy_route(app)

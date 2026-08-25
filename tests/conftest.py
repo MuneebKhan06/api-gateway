@@ -59,6 +59,9 @@ routes:
   - path_prefix: /auth
     upstream: null
     auth_required: false
+  - path_prefix: /metrics
+    upstream: null
+    auth_required: false
 """
 
 
