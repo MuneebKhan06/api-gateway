@@ -40,6 +40,11 @@ routes:
     strip_prefix: true
     timeout_seconds: 5
     auth_required: false
+  - path_prefix: /api/protected
+    upstream: http://service-a:8001
+    strip_prefix: true
+    timeout_seconds: 5
+    auth_required: true
   - path_prefix: /api/raw
     upstream: http://service-a:8001
     strip_prefix: false

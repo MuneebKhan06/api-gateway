@@ -24,6 +24,7 @@ from gateway.config import Settings, get_settings
 from gateway.db.connection import Database
 from gateway.health import check_dependencies, check_upstreams, overall_status
 from gateway.logging_config import configure_logging
+from gateway.middleware.auth import AuthMiddleware
 from gateway.middleware.correlation import CorrelationIdMiddleware, get_request_id
 from gateway.proxy import ReverseProxy, UpstreamTimeout, UpstreamUnavailable
 from gateway.redis_client import RedisClient
@@ -114,8 +115,10 @@ def create_app(
     app.state.redis = redis_client
     app.state.database = database
 
-    # Outermost middleware, so every log line and every response carries the
-    # request ID even if something further in the chain rejects the request.
+    # Order matters, and add_middleware stacks in reverse: the last one
+    # added runs first. Correlation must be outermost so that even a 401 from
+    # the auth layer carries a request ID.
+    app.add_middleware(AuthMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
 
     @app.get("/health", tags=["gateway"])
