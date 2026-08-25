@@ -58,13 +58,37 @@ async def check_upstreams(proxy: ReverseProxy, routes: list[RouteConfig]) -> dic
     return dict(sorted(results))
 
 
-def overall_status(upstream_states: dict[str, str]) -> str:
-    """The gateway is healthy on its own, degraded when an upstream is not.
+async def check_dependencies(redis_client, database) -> dict[str, str]:
+    """Probe Redis and Postgres side by side.
 
-    This stays a 200 either way. A load balancer pulling the gateway out of
-    rotation because one upstream is down would take out the routes that are
-    still working, which is the opposite of what we want.
+    Both are probed even when the first one is already down, because a health
+    endpoint that stops at the first failure hides the second one.
     """
+    redis_ok, database_ok = await asyncio.gather(
+        redis_client.ping(),
+        database.ping(),
+    )
+    return {
+        "redis": "connected" if redis_ok else "unavailable",
+        "database": "connected" if database_ok else "unavailable",
+    }
+
+
+def overall_status(upstream_states: dict[str, str], dependencies: dict[str, str] | None = None) -> str:
+    """Report healthy, degraded or unhealthy.
+
+    The distinction matters to whatever is polling this:
+
+    - degraded: an upstream is down, but the gateway still serves every other
+      route correctly. Stays a 200, because pulling the gateway out of
+      rotation would take out the routes that are still working.
+    - unhealthy: Redis or Postgres is gone. Authentication and rate limiting
+      cannot be enforced, so the gateway itself is the problem.
+    """
+    dependencies = dependencies or {}
+
+    if any(state != "connected" for state in dependencies.values()):
+        return "unhealthy"
     if any(state != "healthy" for state in upstream_states.values()):
         return "degraded"
     return "healthy"

@@ -9,13 +9,16 @@ real response, still streams the body back.
 
 import asyncio
 
+import fakeredis.aioredis
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from gateway.config import Settings
+from gateway.db.connection import Database
 from gateway.main import create_app
 from gateway.proxy import ReverseProxy
+from gateway.redis_client import RedisClient
 from upstream.service_a import main as service_a
 from upstream.service_b import main as service_b
 from upstream.service_c import main as service_c
@@ -119,9 +122,52 @@ def routes_file(tmp_path):
     return path
 
 
+class FakeRedisClient(RedisClient):
+    """RedisClient backed by fakeredis.
+
+    Subclassed rather than mocked so the app still calls startup, shutdown and
+    ping exactly as it would against a real server.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(url="redis://fake", max_connections=10)
+
+    async def startup(self) -> None:
+        self._client = fakeredis.aioredis.FakeRedis(decode_responses=True)
+
+
 @pytest.fixture
-def gateway(routes_file, upstream_apps):
-    settings = Settings(routes_file=str(routes_file), environment="test")
+def settings(routes_file, tmp_path):
+    # A file backed SQLite database rather than :memory:, because an in-memory
+    # one is scoped to a single connection and the app opens its own.
+    return Settings(
+        routes_file=str(routes_file),
+        environment="test",
+        jwt_secret_key="test-secret-key",
+        database_url=f"sqlite+aiosqlite:///{tmp_path}/gateway-test.db",
+    )
+
+
+async def _create_schema(url: str) -> None:
+    database = Database(url)
+    await database.startup()
+    await database.create_all()
+    await database.shutdown()
+
+
+@pytest.fixture
+def gateway(settings, upstream_apps):
+    """A fully wired gateway: real request path, fake backing services."""
+    # Tables are created before the app boots so its engine finds a schema.
+    asyncio.run(_create_schema(settings.database_url))
+
     proxy = ReverseProxy(transport=MockUpstreamTransport(upstream_apps))
-    with TestClient(create_app(settings, proxy=proxy)) as client:
+    app = create_app(
+        settings,
+        proxy=proxy,
+        redis_client=FakeRedisClient(),
+        database=Database(settings.database_url),
+    )
+
+    with TestClient(app) as client:
         yield client

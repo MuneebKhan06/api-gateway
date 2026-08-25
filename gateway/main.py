@@ -1,10 +1,15 @@
 """Gateway entry point.
 
-Right now this serves the gateway's own endpoints: health and route
-introspection. The proxy and the middleware chain are layered on top of this
-app as they are built.
+Builds the app, owns the lifespan, and serves the gateway's own endpoints
+(health and route introspection). Everything else falls through to the
+catch-all proxy route at the bottom of this module.
+
+Lifespan starts three shared, process-wide resources: the proxy's HTTP client,
+the Redis pool and the database engine. All three are injectable so tests can
+run the real request path against fakes.
 """
 
+import asyncio
 import contextlib
 import logging
 import signal
@@ -14,10 +19,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from gateway.config import Settings, get_settings
-from gateway.health import check_upstreams, overall_status
+from gateway.db.connection import Database
+from gateway.health import check_dependencies, check_upstreams, overall_status
 from gateway.logging_config import configure_logging
 from gateway.middleware.correlation import CorrelationIdMiddleware, get_request_id
 from gateway.proxy import ReverseProxy, UpstreamTimeout, UpstreamUnavailable
+from gateway.redis_client import RedisClient
 from gateway.router import RouteNotFound, RouteTable, build_route_table
 from gateway.schemas.gateway import GatewayError, RouteStatus
 
@@ -57,20 +64,38 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await proxy.startup()
     app.state.proxy = proxy
 
+    redis_client = getattr(app.state, "redis", None) or RedisClient(
+        settings.redis_url, max_connections=settings.redis_max_connections
+    )
+    await redis_client.startup()
+    app.state.redis = redis_client
+
+    database = getattr(app.state, "database", None) or Database(settings.database_url)
+    await database.startup()
+    app.state.database = database
+
     logger.info("Gateway started in %s mode", settings.environment)
     try:
         yield
     finally:
+        # Shut down in reverse order of startup.
+        await database.shutdown()
+        await redis_client.shutdown()
         await proxy.shutdown()
         logger.info("Gateway shutting down")
 
 
-def create_app(settings: Settings | None = None, proxy: ReverseProxy | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    proxy: ReverseProxy | None = None,
+    redis_client: RedisClient | None = None,
+    database: Database | None = None,
+) -> FastAPI:
     """Build the app.
 
-    `proxy` is injectable so tests can supply one pointed at in-process mock
-    upstreams. In normal operation it is left as None and lifespan builds one
-    from settings.
+    The three collaborators are injectable so tests can supply fakes: a proxy
+    pointed at in-process upstreams, a fake Redis, an in-memory database. Left
+    as None in normal operation, where lifespan builds them from settings.
     """
     settings = settings or get_settings()
 
@@ -82,6 +107,8 @@ def create_app(settings: Settings | None = None, proxy: ReverseProxy | None = No
     )
     app.state.settings = settings
     app.state.proxy = proxy
+    app.state.redis = redis_client
+    app.state.database = database
 
     # Outermost middleware, so every log line and every response carries the
     # request ID even if something further in the chain rejects the request.
@@ -95,10 +122,14 @@ def create_app(settings: Settings | None = None, proxy: ReverseProxy | None = No
         Postgres are added here once they are wired in.
         """
         routes = app.state.route_table.all()
-        upstreams = await check_upstreams(app.state.proxy, routes)
+        upstreams, dependencies = await asyncio.gather(
+            check_upstreams(app.state.proxy, routes),
+            check_dependencies(app.state.redis, app.state.database),
+        )
         return {
-            "status": overall_status(upstreams),
+            "status": overall_status(upstreams, dependencies),
             "routes_loaded": len(routes),
+            **dependencies,
             "upstreams": upstreams,
         }
 

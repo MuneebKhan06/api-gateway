@@ -10,14 +10,20 @@ def make_client() -> TestClient:
 
 
 def test_health_reports_loaded_routes():
+    """This app is built with no injected fakes, so nothing it depends on is
+    reachable. It should say so rather than claim to be healthy.
+
+    tests/test_health.py covers the healthy and degraded paths against a fully
+    wired gateway.
+    """
     with make_client() as client:
         response = client.get("/health")
         assert response.status_code == 200
         body = response.json()
         assert body["routes_loaded"] > 0
-        # No upstreams are running for this app, so it reports degraded and
-        # still answers 200. See tests/test_health.py for the healthy path.
-        assert body["status"] == "degraded"
+        assert body["status"] == "unhealthy"
+        assert body["redis"] == "unavailable"
+        assert body["database"] == "unavailable"
         assert set(body["upstreams"]) == {"service-a", "service-b", "service-c"}
 
 
