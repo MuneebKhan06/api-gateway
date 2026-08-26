@@ -100,10 +100,23 @@ class SlidingWindowLimiter(BaseRateLimiter):
         )
 
     async def entry_count(self, identifier: str, route_prefix: str) -> int:
-        """How many requests are currently held for this client.
+        """Requests inside the window right now, which is what counts against
+        the limit.
 
-        Exposed because the memory cost of this algorithm is its defining
-        tradeoff, and the benchmark script measures exactly this.
+        Pruning only happens inside the script, so a plain ZCARD would include
+        entries that have aged out but not yet been swept. This counts by score
+        instead, which gives the same answer the next check would.
+        """
+        now = await self._now()
+        return await self._redis.zcount(
+            self._key(identifier, route_prefix), now - self._window, "+inf"
+        )
+
+    async def stored_entry_count(self, identifier: str, route_prefix: str) -> int:
+        """Entries actually held in Redis, aged out ones included.
+
+        This is the number that matters for memory, since an entry occupies
+        space until something sweeps it. The benchmark measures this one.
         """
         return await self._redis.zcard(self._key(identifier, route_prefix))
 
