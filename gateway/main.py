@@ -18,6 +18,7 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from gateway.auth.blacklist_cache import BlacklistCache
 from gateway.auth.routes import build_jwt_handler
 from gateway.auth.routes import router as auth_router
 from gateway.config import Settings, get_settings
@@ -86,6 +87,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.jwt_handler = build_jwt_handler(settings)
     app.state.rate_limiters = RateLimiterRegistry(redis_client.client)
+    # One cache for the process, shared by the auth middleware and the logout
+    # handler so a revocation is visible to both immediately.
+    app.state.blacklist_cache = BlacklistCache(
+        ttl_seconds=settings.blacklist_cache_ttl_seconds
+    )
 
     logger.info("Gateway started in %s mode", settings.environment)
     try:

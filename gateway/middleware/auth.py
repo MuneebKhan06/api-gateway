@@ -95,7 +95,7 @@ class AuthMiddleware:
             await response(scope, receive, send)
             return
 
-        blacklist = TokenBlacklist(state.redis.client)
+        blacklist = TokenBlacklist(state.redis.client, cache=state.blacklist_cache)
         if await blacklist.contains(claims.jti):
             logger.info("Rejected blacklisted token %s", claims.jti)
             response = _unauthorized("token_revoked", "this access token has been revoked")

@@ -58,7 +58,7 @@ async def get_auth_service(request: Request) -> AuthService:
         yield AuthService(
             session=session,
             jwt_handler=state.jwt_handler,
-            blacklist=TokenBlacklist(state.redis.client),
+            blacklist=TokenBlacklist(state.redis.client, cache=state.blacklist_cache),
             access_ttl_seconds=state.settings.access_token_ttl_seconds,
         )
 

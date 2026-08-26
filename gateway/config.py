@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_ttl_seconds: int = 900  # 15 minutes
     refresh_token_ttl_seconds: int = 604800  # 7 days
+    # How long an instance may serve a cached "not revoked" answer before
+    # rechecking Redis. Raising this cuts Redis load and widens the window in
+    # which a revoked token is still accepted.
+    blacklist_cache_ttl_seconds: float = 5.0
 
     # Rate limiting defaults. A route may override these in routes.yaml.
     default_rate_limit_algorithm: Literal[
