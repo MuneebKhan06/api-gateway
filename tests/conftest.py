@@ -179,3 +179,26 @@ def gateway(settings, upstream_apps):
 
     with TestClient(app) as client:
         yield client
+
+
+@pytest.fixture(scope="session", autouse=True)
+def lua_scripting_is_available():
+    """Guard against the limiters silently failing open in tests.
+
+    Every rate limiter runs as a Lua script, and fakeredis only executes Lua
+    when lupa is installed. Without it EVALSHA raises, the limiters take their
+    fail-open path, and the tests pass while testing nothing at all. Better to
+    stop the whole run with a clear reason.
+    """
+    import fakeredis
+
+    client = fakeredis.FakeStrictRedis()
+    try:
+        client.eval("return 1", 0)
+    except Exception as exc:
+        pytest.fail(
+            "fakeredis cannot execute Lua scripts, so the rate limiters would "
+            f"silently fail open instead of being tested. Install lupa. ({exc})"
+        )
+    finally:
+        client.close()
