@@ -13,7 +13,9 @@ rejects it anyway, and letting Redis expire the keys means the blacklist
 cannot grow without bound.
 
 The cost is one Redis GET on the hot path of every authenticated request.
-That is the price of real logout, and it is a deliberate trade.
+That is the price of real logout, and it is a deliberate trade. An optional
+local cache in front of it (see blacklist_cache) absorbs repeated checks for
+the same token so the Redis lookup is not paid on every single request.
 """
 
 import logging
@@ -21,14 +23,19 @@ from datetime import datetime, timezone
 
 import redis.asyncio as redis
 
+from gateway.auth.blacklist_cache import BlacklistCache
+
 logger = logging.getLogger(__name__)
 
 KEY_PREFIX = "blacklist:token:"
 
 
 class TokenBlacklist:
-    def __init__(self, client: redis.Redis) -> None:
+    def __init__(self, client: redis.Redis, cache: BlacklistCache | None = None) -> None:
         self._redis = client
+        # Optional. Without one every check goes to Redis, which is correct
+        # but pays a round trip per request.
+        self._cache = cache
 
     @staticmethod
     def _key(jti: str) -> str:
@@ -46,6 +53,12 @@ class TokenBlacklist:
             return False
 
         await self._redis.setex(self._key(jti), ttl, reason)
+
+        if self._cache is not None:
+            # The instance doing the revoking must not keep serving a cached
+            # "not blacklisted" answer it wrote moments ago.
+            self._cache.put(jti, True)
+
         logger.info("Blacklisted token %s for %ds (%s)", jti, ttl, reason)
         return True
 
@@ -58,14 +71,27 @@ class TokenBlacklist:
         outage, so this accepts them and logs loudly. The exposure is bounded
         by the access token TTL.
         """
+        if self._cache is not None:
+            cached = self._cache.get(jti)
+            if cached is not None:
+                return cached
+
         try:
-            return await self._redis.exists(self._key(jti)) == 1
+            found = await self._redis.exists(self._key(jti)) == 1
         except Exception as exc:
             logger.error("Blacklist check failed, allowing request: %s", exc)
+            # Deliberately not cached. Caching a failure would extend a brief
+            # Redis blip into several seconds of unchecked tokens per instance.
             return False
+
+        if self._cache is not None:
+            self._cache.put(jti, found)
+        return found
 
     async def reason(self, jti: str) -> str | None:
         return await self._redis.get(self._key(jti))
 
     async def remove(self, jti: str) -> bool:
+        if self._cache is not None:
+            self._cache.invalidate(jti)
         return await self._redis.delete(self._key(jti)) == 1

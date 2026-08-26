@@ -26,7 +26,9 @@ from gateway.health import check_dependencies, check_upstreams, overall_status
 from gateway.logging_config import configure_logging
 from gateway.middleware.auth import AuthMiddleware
 from gateway.middleware.correlation import CorrelationIdMiddleware, get_request_id
+from gateway.middleware.rate_limiter import RateLimitMiddleware
 from gateway.proxy import ReverseProxy, UpstreamTimeout, UpstreamUnavailable
+from gateway.rate_limit.factory import RateLimiterRegistry
 from gateway.redis_client import RedisClient
 from gateway.router import RouteNotFound, RouteTable, build_route_table
 from gateway.schemas.gateway import GatewayError, RouteStatus
@@ -43,7 +45,12 @@ def _install_sighup_handler(app: FastAPI, table: RouteTable) -> None:
 
     def handle_sighup(signum, frame) -> None:  # noqa: ARG001
         logger.info("SIGHUP received, reloading route table")
-        table.reload()
+        if table.reload():
+            # Limiters are cached per configuration, so a changed limit would
+            # otherwise keep being served from the old instance.
+            registry = getattr(app.state, "rate_limiters", None)
+            if registry is not None:
+                registry.clear()
 
     try:
         signal.signal(signal.SIGHUP, handle_sighup)
@@ -78,6 +85,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.database = database
 
     app.state.jwt_handler = build_jwt_handler(settings)
+    app.state.rate_limiters = RateLimiterRegistry(redis_client.client)
 
     logger.info("Gateway started in %s mode", settings.environment)
     try:
@@ -116,8 +124,12 @@ def create_app(
     app.state.database = database
 
     # Order matters, and add_middleware stacks in reverse: the last one
-    # added runs first. Correlation must be outermost so that even a 401 from
-    # the auth layer carries a request ID.
+    # added runs first, so the chain is correlation, auth, rate limit.
+    #
+    # Correlation is outermost so even a 401 or 429 carries a request ID.
+    # Rate limiting runs after auth so an authenticated request is charged to
+    # its user rather than to whatever address it came from.
+    app.add_middleware(RateLimitMiddleware)
     app.add_middleware(AuthMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
 

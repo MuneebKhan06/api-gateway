@@ -45,6 +45,30 @@ routes:
     strip_prefix: true
     timeout_seconds: 5
     auth_required: true
+  - path_prefix: /api/limited
+    upstream: http://service-a:8001
+    strip_prefix: true
+    auth_required: false
+    rate_limit:
+      algorithm: fixed_window
+      requests: 3
+      window_seconds: 60
+  - path_prefix: /api/limited-bucket
+    upstream: http://service-a:8001
+    strip_prefix: true
+    auth_required: false
+    rate_limit:
+      algorithm: token_bucket
+      requests: 3
+      window_seconds: 60
+  - path_prefix: /api/limited-auth
+    upstream: http://service-a:8001
+    strip_prefix: true
+    auth_required: true
+    rate_limit:
+      algorithm: fixed_window
+      requests: 3
+      window_seconds: 60
   - path_prefix: /api/raw
     upstream: http://service-a:8001
     strip_prefix: false
