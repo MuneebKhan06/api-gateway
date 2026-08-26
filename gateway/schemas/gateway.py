@@ -52,14 +52,33 @@ class RouteTableConfig(BaseModel):
     routes: list[RouteConfig]
 
 
+class RateLimitStatus(BaseModel):
+    """The effective rate limit on a route, as the gateway is enforcing it."""
+
+    algorithm: str
+    requests: int
+    window_seconds: int
+    # Derived, because "100 per 60s" and "1.67 per second" are the same limit
+    # and different people reach for different ones when reading a config.
+    requests_per_second: float
+
+
 class RouteStatus(BaseModel):
-    """What GET /gateway/routes returns for each route."""
+    """What GET /gateway/routes returns for each route.
+
+    Reports what the gateway is actually doing, not what the file says. If a
+    route declares a limit the gateway failed to build, this shows no limit
+    rather than the declared one, because the declared one is not being
+    enforced.
+    """
 
     path_prefix: str
     upstream: str | None
+    strip_prefix: bool
+    timeout_seconds: float
     auth_required: bool
     circuit_breaker_state: str
-    rate_limit_algorithm: str | None
+    rate_limit: RateLimitStatus | None = None
 
 
 class GatewayError(BaseModel):

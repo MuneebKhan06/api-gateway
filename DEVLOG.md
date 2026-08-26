@@ -219,3 +219,102 @@ that cannot authenticate anyone would report itself as merely degraded.
 
 167 tests passing. Tomorrow: rate limiting, all three algorithms, with Lua
 for atomicity.
+
+## Day 4
+
+Rate limiting. Three algorithms, all of them Lua scripts, plus the middleware
+that applies them.
+
+**Why Lua and not Python.** A limiter written as GET, decide, SET is broken
+under concurrency and it is worth being precise about how. Two requests arrive
+together. Both read a counter at 99 against a limit of 100. Both conclude they
+are under. Both write 100. Two requests got through on one slot, and the
+window that was supposed to cap at 100 served 101. Under real load that is not
+a rare race, it is the normal case. Redis runs a Lua script atomically, so the
+read, the decision and the write cannot be interleaved by another request.
+
+**Fixed window is in here because it is wrong.** It is the cheapest of the
+three, one integer per client, and it has a boundary flaw that is the entire
+justification for the other two. A client limited to 100 per minute sends 100
+at 00:00:59 and 100 more at 00:01:00. Both windows are within limit. The
+client just sent 200 requests in about a second.
+
+I wrote a test that demonstrates this directly rather than asserting it in
+prose, and another that shows sliding window refusing the same burst. If the
+README is going to claim fixed window has a boundary problem, there should be
+a test that fails if it ever stops having one.
+
+**Token bucket refill is lazy.** Nothing runs on a timer topping up buckets.
+Each bucket stores its token count and the timestamp of that count, and the
+next request works out what accrued in between. An idle client costs nothing
+while idle. Refill is capped at capacity, otherwise a client that goes quiet
+for an hour comes back able to send an hour's worth at once.
+
+**Clocks.** Both token bucket and sliding window need to know what time it is,
+and I read that from Redis rather than from the gateway process. With more
+than one gateway instance, using each process's own clock means their idea of
+a client's bucket disagrees by however much their clocks have drifted. Redis
+is the one clock every instance already shares.
+
+Also guarded against the clock going backwards. It should not, but a limiter
+that credits tokens on a negative elapsed time hands out free requests when it
+does.
+
+**A sorted set member has to be unique.** First version of the sliding window
+scored entries by timestamp and used the timestamp as the member too. Two
+requests in the same millisecond collide on the same member, ZADD overwrites
+rather than adds, and the client gets a free request. Member is now timestamp
+plus a random suffix.
+
+**Testing caught something I would have shipped.** All the limiter tests
+passed on the first run, which was suspicious given I had just written three
+Lua scripts. They passed because fakeredis cannot execute Lua without lupa
+installed, EVALSHA was raising, and every limiter was taking its fail-open
+path. The tests were asserting that a completely broken limiter allows
+requests, which it does.
+
+Installed lupa, and added a session fixture that fails the whole run with a
+clear message if Lua is unavailable. Fail-open is the right behaviour in
+production and a trap in tests, so the trap needed a tripwire.
+
+**entry_count was lying.** It reported ZCARD, which includes entries that have
+aged out but not yet been swept, since pruning only happens inside the script
+on the next request. Split it into entry_count, which counts what is actually
+inside the window, and stored_entry_count, which counts what Redis is holding.
+The second one is the honest number for the memory tradeoff and is what the
+benchmark will measure.
+
+**Middleware order.** Rate limiting runs after auth, deliberately. An
+authenticated request is charged to its user id; only anonymous traffic falls
+back to the address. Limiting by address when a user is known would put an
+entire office behind one NAT into a single shared bucket.
+
+Also made sure the limiter does not answer for paths that match no route. Same
+mistake I nearly made with auth on Day 3: an unknown path would come back 429
+instead of 404, which tells a caller the path exists.
+
+**The blacklist hot key.** Every authenticated request was doing a Redis
+lookup to check revocation. That is a round trip per request, and every
+gateway instance reads the same key space, so it becomes a hot spot. Added a
+small bounded TTL cache in front of it. Fifty requests with one token now do
+one Redis lookup instead of fifty.
+
+The staleness this introduces is real and bounded: an instance can serve a
+cached "not revoked" answer for up to five seconds after the revocation lands
+in Redis. That is much smaller than the 15 minute access token lifetime the
+blacklist is already bounded by. Two details keep it from being a regression:
+a positive answer is cached far longer, since revocation is not undone, and a
+Redis failure is never cached, because caching a failure would stretch a brief
+blip into seconds of unchecked tokens on every instance.
+
+The cache is bounded at 10,000 entries. An unbounded dict keyed by token id is
+a memory leak that any client can drive by sending fresh tokens.
+
+**Route introspection.** /gateway/routes has been reporting a placeholder for
+the rate limit since Day 1. It now looks the limiter up in the registry rather
+than reading the config, so a route whose limiter failed to build reports no
+limit instead of claiming one that is not being applied. There is a test that
+sends exactly as many requests as the endpoint advertises and checks that the
+next one is the one that gets rejected.
+
+302 tests passing. Tomorrow: the circuit breaker.

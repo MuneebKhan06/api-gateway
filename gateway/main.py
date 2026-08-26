@@ -32,7 +32,7 @@ from gateway.proxy import ReverseProxy, UpstreamTimeout, UpstreamUnavailable
 from gateway.rate_limit.factory import RateLimiterRegistry
 from gateway.redis_client import RedisClient
 from gateway.router import RouteNotFound, RouteTable, build_route_table
-from gateway.schemas.gateway import GatewayError, RouteStatus
+from gateway.schemas.gateway import GatewayError, RateLimitStatus, RouteStatus
 
 logger = logging.getLogger(__name__)
 
@@ -160,18 +160,8 @@ def create_app(
 
     @app.get("/gateway/routes", tags=["gateway"], response_model=list[RouteStatus])
     async def list_routes() -> list[RouteStatus]:
-        """Show the route table as the gateway currently sees it."""
-        return [
-            RouteStatus(
-                path_prefix=route.path_prefix,
-                upstream=route.upstream,
-                auth_required=route.auth_required,
-                # Filled in for real once the breaker registry exists.
-                circuit_breaker_state="closed" if route.circuit_breaker else "disabled",
-                rate_limit_algorithm=route.rate_limit.algorithm if route.rate_limit else None,
-            )
-            for route in app.state.route_table.all()
-        ]
+        """Show the route table as the gateway is currently enforcing it."""
+        return [_route_status(app, route) for route in app.state.route_table.all()]
 
     # Registered before the catch-all so /auth is served here, not proxied.
     app.include_router(auth_router)
@@ -179,6 +169,50 @@ def create_app(
     _register_error_handlers(app)
     _register_proxy_route(app)
     return app
+
+
+def _rate_limit_status(app: FastAPI, route) -> RateLimitStatus | None:
+    """Report the limit actually in force on a route.
+
+    The limiter is looked up rather than read straight off the config, so a
+    route whose limiter could not be built reports no limit instead of
+    claiming one that is not being applied.
+    """
+    if route.rate_limit is None:
+        return None
+
+    registry = getattr(app.state, "rate_limiters", None)
+    if registry is None:
+        return None
+
+    try:
+        limiter = registry.get(route.rate_limit)
+    except ValueError:
+        logger.warning(
+            "Route %s declares an unusable rate limit, reporting it as unlimited",
+            route.path_prefix,
+        )
+        return None
+
+    return RateLimitStatus(
+        algorithm=limiter.name,
+        requests=limiter.limit,
+        window_seconds=limiter.window_seconds,
+        requests_per_second=round(limiter.limit / limiter.window_seconds, 4),
+    )
+
+
+def _route_status(app: FastAPI, route) -> RouteStatus:
+    return RouteStatus(
+        path_prefix=route.path_prefix,
+        upstream=route.upstream,
+        strip_prefix=route.strip_prefix,
+        timeout_seconds=route.timeout_seconds,
+        auth_required=route.auth_required,
+        # Filled in for real once the breaker registry exists on Day 5.
+        circuit_breaker_state="closed" if route.circuit_breaker else "disabled",
+        rate_limit=_rate_limit_status(app, route),
+    )
 
 
 def _error_response(status_code: int, error: str, detail: str) -> JSONResponse:
