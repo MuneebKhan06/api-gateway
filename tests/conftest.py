@@ -91,6 +91,9 @@ routes:
   - path_prefix: /metrics
     upstream: null
     auth_required: false
+  - path_prefix: /gateway
+    upstream: null
+    auth_required: false
 """
 
 
@@ -177,6 +180,12 @@ def settings(routes_file, tmp_path):
         environment="test",
         jwt_secret_key="test-secret-key",
         database_url=f"sqlite+aiosqlite:///{tmp_path}/gateway-test.db",
+        # Lower than the production defaults so breaker tests do not need to
+        # drive dozens of requests to trip anything.
+        breaker_failure_threshold=3,
+        breaker_failure_window_seconds=60,
+        breaker_recovery_timeout_seconds=30,
+        breaker_success_threshold=2,
     )
 
 

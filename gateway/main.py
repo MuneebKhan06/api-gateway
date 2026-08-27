@@ -27,6 +27,7 @@ from gateway.db.connection import Database
 from gateway.health import check_dependencies, check_upstreams, overall_status
 from gateway.logging_config import configure_logging
 from gateway.middleware.auth import AuthMiddleware
+from gateway.middleware.circuit_breaker import CircuitBreakerMiddleware
 from gateway.middleware.correlation import CorrelationIdMiddleware, get_request_id
 from gateway.middleware.rate_limiter import RateLimitMiddleware
 from gateway.proxy import ReverseProxy, UpstreamTimeout, UpstreamUnavailable
@@ -135,11 +136,16 @@ def create_app(
     app.state.database = database
 
     # Order matters, and add_middleware stacks in reverse: the last one
-    # added runs first, so the chain is correlation, auth, rate limit.
+    # added runs first, so the chain is correlation, auth, rate limit,
+    # circuit breaker, then the proxy.
     #
-    # Correlation is outermost so even a 401 or 429 carries a request ID.
+    # Correlation is outermost so even a 401, 429 or 503 carries a request ID.
     # Rate limiting runs after auth so an authenticated request is charged to
-    # its user rather than to whatever address it came from.
+    # its user rather than to whatever address it came from. The breaker is
+    # innermost because it should only judge an upstream on requests that were
+    # actually going to reach it: a request rejected for being unauthenticated
+    # or over its limit says nothing about the upstream's health.
+    app.add_middleware(CircuitBreakerMiddleware)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(AuthMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
