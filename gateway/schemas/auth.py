@@ -2,6 +2,10 @@
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+# Defined in the gateway schemas because it is not auth specific, re-exported
+# here so the auth endpoints can keep importing it from one place.
+from gateway.schemas.gateway import MessageResponse
+
 # Long enough to matter, short enough that bcrypt's 72 byte limit is not hit.
 MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 72
@@ -41,5 +45,11 @@ class UserResponse(BaseModel):
     roles: list[str]
 
 
-class MessageResponse(BaseModel):
-    message: str
+__all__ = [
+    "LoginRequest",
+    "MessageResponse",
+    "RefreshRequest",
+    "RegisterRequest",
+    "TokenResponse",
+    "UserResponse",
+]

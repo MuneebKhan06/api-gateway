@@ -92,3 +92,21 @@ class GatewayError(BaseModel):
     error: str
     detail: str
     request_id: str | None = None
+
+
+class BreakerStatus(BaseModel):
+    """One upstream's circuit breaker, as reported by /gateway/breakers."""
+
+    upstream: str
+    url: str
+    state: str
+    failures: int
+    successes: int
+    #: Unix timestamp the breaker last opened, or null if it is closed.
+    opened_at: float | None = None
+    recovery_timeout_seconds: int
+    failure_threshold: int
+
+
+class MessageResponse(BaseModel):
+    message: str

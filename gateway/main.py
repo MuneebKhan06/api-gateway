@@ -22,6 +22,7 @@ from gateway.auth.blacklist_cache import BlacklistCache
 from gateway.auth.routes import build_jwt_handler
 from gateway.auth.routes import router as auth_router
 from gateway.circuit_breaker.registry import build_registry
+from gateway.circuit_breaker.routes import router as breaker_router
 from gateway.config import Settings, get_settings
 from gateway.db.connection import Database
 from gateway.health import check_dependencies, check_upstreams, overall_status
@@ -174,8 +175,9 @@ def create_app(
         """Show the route table as the gateway is currently enforcing it."""
         return [_route_status(app, route) for route in app.state.route_table.all()]
 
-    # Registered before the catch-all so /auth is served here, not proxied.
+    # Registered before the catch-all so these are served here, not proxied.
     app.include_router(auth_router)
+    app.include_router(breaker_router)
 
     _register_error_handlers(app)
     _register_proxy_route(app)
