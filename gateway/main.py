@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from gateway.auth.blacklist_cache import BlacklistCache
 from gateway.auth.routes import build_jwt_handler
 from gateway.auth.routes import router as auth_router
+from gateway.circuit_breaker.registry import build_registry
 from gateway.config import Settings, get_settings
 from gateway.db.connection import Database
 from gateway.health import check_dependencies, check_upstreams, overall_status
@@ -52,6 +53,9 @@ def _install_sighup_handler(app: FastAPI, table: RouteTable) -> None:
             registry = getattr(app.state, "rate_limiters", None)
             if registry is not None:
                 registry.clear()
+            breakers = getattr(app.state, "circuit_breakers", None)
+            if breakers is not None:
+                breakers.clear()
 
     try:
         signal.signal(signal.SIGHUP, handle_sighup)
@@ -87,6 +91,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.jwt_handler = build_jwt_handler(settings)
     app.state.rate_limiters = RateLimiterRegistry(redis_client.client)
+    app.state.circuit_breakers = build_registry(redis_client.client, settings)
     # One cache for the process, shared by the auth middleware and the logout
     # handler so a revocation is visible to both immediately.
     app.state.blacklist_cache = BlacklistCache(
