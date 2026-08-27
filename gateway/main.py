@@ -172,8 +172,13 @@ def create_app(
 
     @app.get("/gateway/routes", tags=["gateway"], response_model=list[RouteStatus])
     async def list_routes() -> list[RouteStatus]:
-        """Show the route table as the gateway is currently enforcing it."""
-        return [_route_status(app, route) for route in app.state.route_table.all()]
+        """Show the route table as the gateway is currently enforcing it,
+        including live circuit breaker state."""
+        routes = app.state.route_table.all()
+        # Fetched once for the whole table rather than per route: several
+        # routes usually share an upstream, and each lookup is a Redis call.
+        breaker_states = await app.state.circuit_breakers.states_for(routes)
+        return [_route_status(app, route, breaker_states) for route in routes]
 
     # Registered before the catch-all so these are served here, not proxied.
     app.include_router(auth_router)
@@ -215,15 +220,26 @@ def _rate_limit_status(app: FastAPI, route) -> RateLimitStatus | None:
     )
 
 
-def _route_status(app: FastAPI, route) -> RouteStatus:
+def _route_status(app: FastAPI, route, breaker_states: dict) -> RouteStatus:
+    if not route.circuit_breaker or route.upstream is None:
+        breaker_state = "disabled"
+    elif route.name not in breaker_states:
+        # states_for only reports breakers it is watching, so a missing entry
+        # means nothing has happened yet, which is closed.
+        breaker_state = "closed"
+    else:
+        state = breaker_states[route.name]
+        # None means Redis could not be read, so say so instead of claiming a
+        # state the gateway does not actually know.
+        breaker_state = state.value if state is not None else "unknown"
+
     return RouteStatus(
         path_prefix=route.path_prefix,
         upstream=route.upstream,
         strip_prefix=route.strip_prefix,
         timeout_seconds=route.timeout_seconds,
         auth_required=route.auth_required,
-        # Filled in for real once the breaker registry exists on Day 5.
-        circuit_breaker_state="closed" if route.circuit_breaker else "disabled",
+        circuit_breaker_state=breaker_state,
         rate_limit=_rate_limit_status(app, route),
     )
 

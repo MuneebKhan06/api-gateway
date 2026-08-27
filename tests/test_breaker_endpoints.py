@@ -111,3 +111,49 @@ class TestTrip:
         gateway.post("/gateway/breakers/service-a/trip")
         gateway.post("/gateway/breakers/service-a/reset")
         assert gateway.get("/api/orders").status_code == 200
+
+
+class TestRouteTableReflectsBreakers:
+    def test_routes_endpoint_reports_closed_when_healthy(self, gateway):
+        routes = gateway.get("/gateway/routes").json()
+        orders = next(r for r in routes if r["path_prefix"] == "/api/orders")
+        assert orders["circuit_breaker_state"] == "closed"
+
+    def test_routes_endpoint_reports_an_open_breaker(self, gateway):
+        """This replaced a hardcoded placeholder: the endpoint used to claim
+        every enabled breaker was closed regardless of reality."""
+        trip(gateway)
+
+        routes = gateway.get("/gateway/routes").json()
+        orders = next(r for r in routes if r["path_prefix"] == "/api/orders")
+        assert orders["circuit_breaker_state"] == "open"
+
+    def test_every_route_of_the_failing_service_reports_open(self, gateway):
+        trip(gateway)
+
+        routes = {r["path_prefix"]: r for r in gateway.get("/gateway/routes").json()}
+        assert routes["/api/orders"]["circuit_breaker_state"] == "open"
+        assert routes["/api/raw"]["circuit_breaker_state"] == "open"
+        # A different service is unaffected.
+        assert routes["/api/users"]["circuit_breaker_state"] == "closed"
+
+    def test_gateway_owned_routes_report_disabled(self, gateway):
+        routes = {r["path_prefix"]: r for r in gateway.get("/gateway/routes").json()}
+        assert routes["/health"]["circuit_breaker_state"] == "disabled"
+
+    def test_state_is_unknown_when_redis_cannot_be_read(self, gateway):
+        """Introspection degrades instead of failing, and says so rather than
+        claiming a state it does not know."""
+        registry = gateway.app.state.circuit_breakers
+
+        async def broken(_upstream):
+            raise ConnectionError("redis is gone")
+
+        registry.snapshot = broken
+
+        response = gateway.get("/gateway/routes")
+        assert response.status_code == 200
+
+        routes = {r["path_prefix"]: r for r in response.json()}
+        assert routes["/api/orders"]["circuit_breaker_state"] == "unknown"
+        assert routes["/health"]["circuit_breaker_state"] == "disabled"

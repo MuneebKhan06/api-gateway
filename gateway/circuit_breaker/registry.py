@@ -60,11 +60,14 @@ class CircuitBreakerRegistry:
     async def trip(self, upstream: str) -> None:
         await self.store_for(upstream).trip(upstream)
 
-    async def states_for(self, routes: list[RouteConfig]) -> dict[str, BreakerState]:
+    async def states_for(
+        self, routes: list[RouteConfig]
+    ) -> dict[str, BreakerState | None]:
         """Current state of every breaker the route table refers to.
 
         Routes with the breaker disabled are skipped rather than reported as
-        closed, because "closed" would suggest a breaker that is watching.
+        closed, because "closed" would suggest a breaker that is watching. An
+        upstream whose state could not be read maps to None.
         """
         upstreams = {
             route.name
@@ -74,7 +77,14 @@ class CircuitBreakerRegistry:
 
         states: dict[str, BreakerState] = {}
         for upstream in sorted(upstreams):
-            states[upstream] = (await self.snapshot(upstream)).state
+            try:
+                states[upstream] = (await self.snapshot(upstream)).state
+            except Exception as exc:
+                # Introspection should degrade rather than fail. A Redis blip
+                # makes the breaker state unknown, which is worth reporting
+                # honestly, but it is not a reason to 500 the whole endpoint.
+                logger.warning("Could not read breaker state for %s: %s", upstream, exc)
+                states[upstream] = None
         return states
 
     def clear(self) -> None:
