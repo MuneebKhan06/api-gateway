@@ -47,15 +47,41 @@ async def probe_upstream(proxy: ReverseProxy, name: str, base_url: str) -> tuple
     return name, "unhealthy"
 
 
-async def check_upstreams(proxy: ReverseProxy, routes: list[RouteConfig]) -> dict[str, str]:
+async def check_upstreams(
+    proxy: ReverseProxy, routes: list[RouteConfig], breaker_states: dict | None = None
+) -> dict[str, str]:
+    """Probe every upstream, skipping those the breaker has already given up on.
+
+    An open breaker means the gateway has already decided this upstream is
+    unwell and stopped sending it traffic. Probing it anyway adds load to a
+    service that is struggling, and the answer is one the gateway already
+    knows. So the breaker state is reported directly instead.
+
+    This also keeps /health cheap during an outage, which is when it tends to
+    be polled hardest.
+    """
     upstreams = distinct_upstreams(routes)
     if not upstreams:
         return {}
 
-    results = await asyncio.gather(
-        *(probe_upstream(proxy, name, url) for name, url in upstreams.items())
-    )
-    return dict(sorted(results))
+    breaker_states = breaker_states or {}
+    results: dict[str, str] = {}
+    to_probe: dict[str, str] = {}
+
+    for name, url in upstreams.items():
+        state = breaker_states.get(name)
+        if state is not None and getattr(state, "value", state) == "open":
+            results[name] = "circuit_open"
+        else:
+            to_probe[name] = url
+
+    if to_probe:
+        probed = await asyncio.gather(
+            *(probe_upstream(proxy, name, url) for name, url in to_probe.items())
+        )
+        results.update(dict(probed))
+
+    return dict(sorted(results.items()))
 
 
 async def check_dependencies(redis_client, database) -> dict[str, str]:
@@ -94,3 +120,9 @@ def overall_status(
     if any(state != "healthy" for state in upstream_states.values()):
         return "degraded"
     return "healthy"
+
+
+def probe_count(upstream_states: dict[str, str]) -> int:
+    """How many upstreams were actually contacted, as opposed to reported
+    from breaker state. Useful when reasoning about health check cost."""
+    return sum(1 for state in upstream_states.values() if state != "circuit_open")

@@ -97,3 +97,51 @@ class TestOverallStatusPrecedence:
 
     def test_all_good(self):
         assert overall_status({"a": "healthy"}, {"redis": "connected"}) == "healthy"
+
+
+class TestBreakerAwareProbing:
+    def test_open_breaker_is_reported_without_probing(self, gateway):
+        """Probing an upstream the gateway has already stopped calling adds
+        load to a struggling service to learn something already known."""
+        service_a._state["fail"] = True
+        for _ in range(3):
+            gateway.get("/api/orders")
+        service_a._state["fail"] = False
+
+        body = gateway.get("/health").json()
+        assert body["upstreams"]["service-a"] == "circuit_open"
+        assert body["status"] == "degraded"
+
+    def test_healthy_upstreams_are_still_probed(self, gateway):
+        service_a._state["fail"] = True
+        for _ in range(3):
+            gateway.get("/api/orders")
+        service_a._state["fail"] = False
+
+        body = gateway.get("/health").json()
+        assert body["upstreams"]["service-b"] == "healthy"
+        assert body["upstreams"]["service-c"] == "healthy"
+
+    def test_probe_count_drops_while_a_breaker_is_open(self, gateway):
+        from gateway.health import probe_count
+
+        before = gateway.get("/health").json()["upstreams"]
+
+        service_a._state["fail"] = True
+        for _ in range(3):
+            gateway.get("/api/orders")
+        service_a._state["fail"] = False
+
+        after = gateway.get("/health").json()["upstreams"]
+        assert probe_count(after) < probe_count(before)
+
+    def test_reset_puts_the_upstream_back_in_the_probe_set(self, gateway):
+        service_a._state["fail"] = True
+        for _ in range(3):
+            gateway.get("/api/orders")
+        service_a._state["fail"] = False
+
+        assert gateway.get("/health").json()["upstreams"]["service-a"] == "circuit_open"
+
+        gateway.post("/gateway/breakers/service-a/reset")
+        assert gateway.get("/health").json()["upstreams"]["service-a"] == "healthy"

@@ -159,8 +159,11 @@ def create_app(
         Postgres are added here once they are wired in.
         """
         routes = app.state.route_table.all()
+        # Breaker state first, so upstreams already known to be down are
+        # reported rather than probed again.
+        breaker_states = await app.state.circuit_breakers.states_for(routes)
         upstreams, dependencies = await asyncio.gather(
-            check_upstreams(app.state.proxy, routes),
+            check_upstreams(app.state.proxy, routes, breaker_states),
             check_dependencies(app.state.redis, app.state.database),
         )
         return {

@@ -318,3 +318,94 @@ sends exactly as many requests as the endpoint advertises and checks that the
 next one is the one that gets rejected.
 
 302 tests passing. Tomorrow: the circuit breaker.
+
+## Day 5
+
+Circuit breaker day. The gateway now stops calling upstreams that have proven
+they cannot answer.
+
+**Splitting the state machine from the storage.** First instinct was one class
+holding state and talking to Redis. Wrote it the other way instead: breaker.py
+is pure functions over an immutable snapshot, store.py does the Redis work.
+
+That paid off immediately. Every transition, including the ones that depend on
+elapsed time, is testable by passing a number in rather than sleeping or
+mocking a clock. Forty-two tests on the state machine, none of them slow, none
+of them touching Redis.
+
+**HALF_OPEN is the interesting state.** It sounds simple: after the recovery
+timeout, let one request through and see what happens. The problem is "one".
+
+If permission is a read followed by a write, then every request arriving the
+instant the timeout lapses reads half_open, and they all believe they are the
+trial. That is a thundering herd aimed at a service that just demonstrated it
+was unwell, which is the exact thing the breaker exists to prevent.
+
+Fixed by making permission a single Lua script that claims the slot: it writes
+`half_open_pending` as it grants permission, so the second caller in the same
+instant sees pending and is refused. There is a test that fires ten concurrent
+permission requests at a half-open breaker and asserts exactly one gets
+through.
+
+That created a second problem. If the process holding the trial dies before
+reporting back, the breaker sits in pending forever and the upstream is never
+retried. So pending also expires: after twice the recovery timeout, a fresh
+trial is allowed. Tested that too.
+
+`half_open_pending` is internal bookkeeping and should not leak into anything
+a human reads, so the store normalises it back to `half_open` on the way out.
+
+**There is no background timer.** Nothing sweeps breakers moving OPEN to
+HALF_OPEN when their timeout lapses. Adding a timer would mean a background
+task per gateway instance racing on shared state, for no benefit. Instead the
+transition resolves on read: a breaker sitting in OPEN past its recovery
+timeout simply reads as HALF_OPEN. The state in Redis is unchanged until a
+request actually arrives, which is the only moment the distinction matters.
+
+**4xx must not open the breaker.** A flood of malformed client requests is a
+client problem. If 404s counted as upstream failures, any client could take a
+healthy service offline for every other client by requesting nonsense in a
+loop. Only 5xx, timeouts and connection errors count.
+
+**Middleware ordering, again.** The breaker is innermost, closest to the
+proxy. It should only judge an upstream on requests that were actually going
+to reach it. A request rejected for being unauthenticated or over its rate
+limit never touched the upstream and says nothing about its health, so it must
+not count either way.
+
+**Breakers are per upstream, not per route.** If service A serves three routes
+and one starts failing, that is evidence about the process behind all three.
+Opening the breaker for the whole service is the intent, not a shortcut.
+
+**Improving the routes endpoint.** Day 2 left a placeholder in there: it
+reported `"closed" if route.circuit_breaker else "disabled"`, which is to say
+it claimed every enabled breaker was closed no matter what was actually
+happening. That is worse than reporting nothing, because it looks like real
+information. It now reads the live state.
+
+Doing that introduced a failure I had to think about: with breaker state
+coming from Redis, a Redis outage made `/gateway/routes` return a 500. An
+introspection endpoint that dies when a dependency blips is not much use
+during an incident, which is when it gets read. It now degrades and reports
+`unknown` for the states it could not read, which is honest, rather than
+guessing closed.
+
+**Improving the health check.** /health was probing every upstream on every
+call, including ones the breaker had already given up on. That adds load to a
+service that is struggling, to learn something the gateway already knows.
+Upstreams with an open breaker are now reported from breaker state instead of
+probed. Health checks get cheaper exactly when the system is under stress,
+which is when they are polled hardest.
+
+**Testing recovery without waiting 30 seconds.** The breaker reads its clock
+from Redis so instances agree on elapsed time, which meant tests could not
+just patch a Python clock. Rather than a fake, the recovery tests rewrite
+`opened_at` in Redis to move the breaker's own sense of when it opened. It
+exercises the real Lua path and runs instantly.
+
+**A note on schemas.** Adding `MessageResponse` for the breaker endpoints, I
+defined a second copy of a class that already existed in the auth schemas.
+Caught it before committing. It is not auth specific, so it now lives in the
+gateway schemas and auth re-exports it.
+
+422 tests passing. Tomorrow: Prometheus metrics and the Grafana dashboard.
