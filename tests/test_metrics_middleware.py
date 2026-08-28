@@ -1,6 +1,5 @@
 """Metrics middleware, measured through the full gateway."""
 
-import pytest
 
 from gateway.metrics.prometheus import REGISTRY
 from upstream.service_a import main as service_a

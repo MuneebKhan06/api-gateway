@@ -1,8 +1,5 @@
-# Local development stack.
-#
-# Prometheus and Grafana are added in the observability pass; for now this is
-# the gateway, the three upstreams it proxies to, and the two data stores the
-# auth and rate limiting work will need.
+# Local development stack: the gateway, the three upstreams it proxies to,
+# the two data stores, and the observability pair that watches all of it.
 
 services:
   redis:
@@ -98,6 +95,47 @@ services:
       service-c:
         condition: service_started
 
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: gateway-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 15 days is plenty for a local stack and keeps the volume small.
+      - --storage.tsdb.retention.time=15d
+      # Lets a config change be applied with a POST instead of a restart.
+      - --web.enable-lifecycle
+    depends_on:
+      - gateway
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: gateway-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      # Local stack only. Anonymous viewing means the dashboard is one click
+      # from a fresh checkout rather than a login prompt.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
 volumes:
   redis-data:
   postgres-data:
+  prometheus-data:
+  grafana-data:

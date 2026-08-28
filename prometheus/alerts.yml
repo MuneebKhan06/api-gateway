@@ -1,0 +1,73 @@
+# Alert rules.
+#
+# Written against the RED metrics rather than against raw counters, because
+# what matters is the rate of failure relative to traffic, not an absolute
+# count that scales with how busy the gateway is.
+
+groups:
+  - name: gateway
+    rules:
+      - alert: CircuitBreakerOpen
+        # 1 is open in the gauge encoding.
+        expr: gateway_circuit_breaker_state == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker open for {{ $labels.upstream }}"
+          description: >
+            The gateway has stopped forwarding to {{ $labels.upstream }}
+            because it failed repeatedly. Requests are being refused with 503.
+
+      - alert: BreakerFlapping
+        # A breaker that opens and closes repeatedly looks calm on a gauge
+        # sampled every 15s and obvious on the transition counter.
+        expr: increase(gateway_circuit_breaker_transitions_total{to_state="open"}[15m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker for {{ $labels.upstream }} is flapping"
+
+      - alert: HighErrorRate
+        expr: |
+          sum by (upstream) (rate(gateway_errors_total[5m]))
+            /
+          sum by (upstream) (rate(gateway_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Over 5 percent of requests to {{ $labels.upstream }} are failing"
+
+      - alert: HighLatency
+        # histogram_quantile over the bucket counts, which is what makes this
+        # correct across several gateway instances.
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (upstream, le) (rate(gateway_request_duration_seconds_bucket[5m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 latency to {{ $labels.upstream }} is above 1 second"
+
+      - alert: ForgedTokenSpike
+        # Signature failures are not ordinary expiries. A sustained rise is
+        # someone probing the gateway with made up tokens.
+        expr: rate(gateway_auth_attempts_total{reason="invalid_token"}[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated rate of invalid JWT signatures"
+
+      - alert: GatewayDown
+        expr: up{job="api-gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus cannot scrape the gateway"
