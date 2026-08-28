@@ -70,6 +70,26 @@ request_duration_seconds = Histogram(
     registry=REGISTRY,
 )
 
+# Time spent waiting on the upstream, as opposed to the end to end time in
+# request_duration_seconds. The difference between the two is the gateway's own
+# overhead, which is the number the README's benchmark table is about and the
+# one worth defending. Without splitting them, a slow upstream and a slow
+# gateway look identical on a latency graph.
+upstream_duration_seconds = Histogram(
+    "gateway_upstream_duration_seconds",
+    "Time spent waiting on the upstream response",
+    ["upstream", "method"],
+    buckets=LATENCY_BUCKETS,
+    registry=REGISTRY,
+)
+
+
+def observe_upstream_duration(upstream: str, method: str, duration_seconds: float) -> None:
+    upstream_duration_seconds.labels(upstream=upstream, method=method).observe(
+        duration_seconds
+    )
+
+
 # Requests currently being handled. A gauge because it goes both ways.
 requests_in_flight = Gauge(
     "gateway_requests_in_flight",

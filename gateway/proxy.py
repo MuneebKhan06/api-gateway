@@ -14,6 +14,7 @@ Two things matter here and are easy to get wrong:
 """
 
 import logging
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -21,6 +22,7 @@ from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import StreamingResponse
 
+from gateway.metrics.prometheus import observe_upstream_duration
 from gateway.middleware.correlation import REQUEST_ID_HEADER, get_request_id
 from gateway.schemas.gateway import RouteConfig
 
@@ -204,14 +206,25 @@ class ReverseProxy:
             timeout=target.timeout,
         )
 
+        started = time.perf_counter()
         try:
             upstream_response = await self.client.send(upstream_request, stream=True)
         except httpx.TimeoutException as exc:
+            # A timeout is still time the upstream cost us, so it is recorded
+            # rather than left out. Dropping failures would make the upstream
+            # look faster the worse it got.
+            observe_upstream_duration(route.name, request.method, time.perf_counter() - started)
             logger.warning("Upstream timeout after %ss: %s", target.timeout, target.url)
             raise UpstreamTimeout(route.name, f"upstream timed out: {target.url}") from exc
         except httpx.RequestError as exc:
+            observe_upstream_duration(route.name, request.method, time.perf_counter() - started)
             logger.warning("Upstream unreachable: %s (%s)", target.url, exc)
             raise UpstreamUnavailable(route.name, f"upstream unreachable: {target.url}") from exc
+
+        # Measured to response headers, not to the last byte of the body. The
+        # body streams to the client afterwards at whatever rate the client
+        # reads, and that is not the upstream being slow.
+        observe_upstream_duration(route.name, request.method, time.perf_counter() - started)
 
         return StreamingResponse(
             upstream_response.aiter_raw(),
