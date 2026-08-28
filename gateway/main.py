@@ -27,10 +27,11 @@ from gateway.config import Settings, get_settings
 from gateway.db.connection import Database
 from gateway.health import check_dependencies, check_upstreams, overall_status
 from gateway.logging_config import configure_logging
+from gateway.metrics.middleware import MetricsMiddleware
+from gateway.metrics.routes import router as metrics_router
 from gateway.middleware.auth import AuthMiddleware
 from gateway.middleware.circuit_breaker import CircuitBreakerMiddleware
 from gateway.middleware.correlation import CorrelationIdMiddleware, get_request_id
-from gateway.metrics.middleware import MetricsMiddleware
 from gateway.middleware.rate_limiter import RateLimitMiddleware
 from gateway.proxy import ReverseProxy, UpstreamTimeout, UpstreamUnavailable
 from gateway.rate_limit.factory import RateLimiterRegistry
@@ -191,6 +192,7 @@ def create_app(
     # Registered before the catch-all so these are served here, not proxied.
     app.include_router(auth_router)
     app.include_router(breaker_router)
+    app.include_router(metrics_router)
 
     _register_error_handlers(app)
     _register_proxy_route(app)

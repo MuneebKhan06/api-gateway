@@ -94,6 +94,9 @@ routes:
   - path_prefix: /gateway
     upstream: null
     auth_required: false
+  - path_prefix: /admin
+    upstream: null
+    auth_required: false
 """
 
 

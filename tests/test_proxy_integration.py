@@ -84,11 +84,15 @@ class TestGatewayErrors:
         assert response.json()["request_id"] == "abc123"
 
     def test_unimplemented_gateway_route_returns_404(self, gateway):
-        # /metrics has no upstream and is not built yet. A gateway-owned
-        # prefix with nothing serving it should say so rather than proxy.
-        response = gateway.get("/metrics")
+        # /admin has no upstream and nothing serving it. A gateway-owned
+        # prefix in that state should say so rather than proxy.
+        response = gateway.get("/admin")
         assert response.status_code == 404
         assert response.json()["error"] == "not_implemented"
+
+    def test_metrics_is_served_by_the_gateway(self, gateway):
+        # /metrics is mounted now, so it must not fall through to the catch-all.
+        assert gateway.get("/metrics").status_code == 200
 
     def test_auth_routes_are_served_by_the_gateway(self, gateway):
         # /auth is mounted now, so it must not fall through to the catch-all.
