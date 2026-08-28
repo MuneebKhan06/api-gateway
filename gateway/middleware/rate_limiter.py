@@ -17,6 +17,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from gateway.metrics.prometheus import observe_rate_limit
 from gateway.middleware.correlation import get_request_id
 from gateway.rate_limit.base import RateLimitResult
 from gateway.router import RouteNotFound
@@ -90,6 +91,10 @@ class RateLimitMiddleware:
         limiter = state.rate_limiters.get(route.rate_limit)
         identifier = client_identifier(request)
         result = await limiter.check(identifier, route.path_prefix)
+
+        # Labelled by route prefix, not by client: per client series would be
+        # unbounded, and the useful question is which routes are throttling.
+        observe_rate_limit(limiter.name, route.path_prefix, result.allowed)
 
         if result.rejected:
             logger.info(

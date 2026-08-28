@@ -30,6 +30,7 @@ from gateway.auth.jwt_handler import (
     WrongTokenType,
     extract_bearer_token,
 )
+from gateway.metrics.prometheus import observe_auth
 from gateway.middleware.correlation import get_request_id
 from gateway.router import RouteNotFound
 from gateway.schemas.gateway import GatewayError
@@ -74,6 +75,7 @@ class AuthMiddleware:
 
         token = extract_bearer_token(request.headers.get("authorization"))
         if token is None:
+            observe_auth("rejected", "missing_token")
             response = _unauthorized("missing_token", "an access token is required")
             await response(scope, receive, send)
             return
@@ -81,16 +83,21 @@ class AuthMiddleware:
         try:
             claims: TokenClaims = state.jwt_handler.decode_access(token)
         except TokenExpired:
+            observe_auth("rejected", "token_expired")
             response = _unauthorized("token_expired", "this access token has expired")
             await response(scope, receive, send)
             return
         except WrongTokenType:
+            observe_auth("rejected", "wrong_token_type")
             response = _unauthorized(
                 "wrong_token_type", "a refresh token cannot be used to authenticate a request"
             )
             await response(scope, receive, send)
             return
         except TokenInvalid:
+            # A token that fails signature validation was forged or tampered
+            # with, which is worth alerting on separately from an expiry.
+            observe_auth("rejected", "invalid_token")
             response = _unauthorized("invalid_token", "this access token is not valid")
             await response(scope, receive, send)
             return
@@ -98,9 +105,12 @@ class AuthMiddleware:
         blacklist = TokenBlacklist(state.redis.client, cache=state.blacklist_cache)
         if await blacklist.contains(claims.jti):
             logger.info("Rejected blacklisted token %s", claims.jti)
+            observe_auth("rejected", "token_revoked")
             response = _unauthorized("token_revoked", "this access token has been revoked")
             await response(scope, receive, send)
             return
+
+        observe_auth("accepted")
 
         # Hand the identity to everything downstream. The proxy reads this to
         # tell the upstream who is calling.

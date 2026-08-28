@@ -79,6 +79,38 @@ requests_in_flight = Gauge(
 )
 
 
+# Rate limiter decisions, split by algorithm so the three can be compared in
+# production rather than only in the benchmark.
+rate_limit_decisions_total = Counter(
+    "gateway_rate_limit_decisions_total",
+    "Rate limiter verdicts",
+    ["algorithm", "route", "decision"],
+    registry=REGISTRY,
+)
+
+# Authentication outcomes. `reason` distinguishes an expired token from a
+# forged one from a revoked one, which are three very different signals: the
+# first is normal, the second is an attack, the third means logout is working.
+auth_attempts_total = Counter(
+    "gateway_auth_attempts_total",
+    "Authentication decisions made by the gateway",
+    ["result", "reason"],
+    registry=REGISTRY,
+)
+
+
+def observe_rate_limit(algorithm: str, route: str, allowed: bool) -> None:
+    rate_limit_decisions_total.labels(
+        algorithm=algorithm,
+        route=route,
+        decision="allowed" if allowed else "rejected",
+    ).inc()
+
+
+def observe_auth(result: str, reason: str = "none") -> None:
+    auth_attempts_total.labels(result=result, reason=reason).inc()
+
+
 def observe_request(
     upstream: str, method: str, status_code: int, duration_seconds: float
 ) -> None:
