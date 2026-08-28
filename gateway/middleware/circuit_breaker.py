@@ -23,6 +23,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from gateway.circuit_breaker.breaker import BreakerState, counts_as_failure
+from gateway.metrics.prometheus import observe_breaker_rejection, observe_breaker_state
 from gateway.middleware.correlation import get_request_id
 from gateway.router import RouteNotFound
 from gateway.schemas.gateway import GatewayError
@@ -58,7 +59,10 @@ class CircuitBreakerMiddleware:
         upstream = route.name
 
         allowed, breaker_state = await registry.allow_request(upstream)
+        observe_breaker_state(upstream, breaker_state.value)
+
         if not allowed:
+            observe_breaker_rejection(upstream)
             logger.info("Refused request to %s, circuit breaker is open", upstream)
             response = self._service_unavailable(upstream, registry)
             await response(scope, receive, send)

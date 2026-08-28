@@ -16,6 +16,10 @@ import redis.asyncio as redis
 
 from gateway.circuit_breaker.breaker import BreakerConfig, BreakerSnapshot, BreakerState
 from gateway.circuit_breaker.store import BreakerStore
+from gateway.metrics.prometheus import (
+    observe_breaker_state,
+    observe_breaker_transition,
+)
 from gateway.schemas.gateway import RouteConfig
 
 logger = logging.getLogger(__name__)
@@ -43,13 +47,30 @@ class CircuitBreakerRegistry:
         return await self.store_for(upstream).allow_request(upstream)
 
     async def record_success(self, upstream: str) -> BreakerState:
-        return await self.store_for(upstream).record_success(upstream)
+        before = (await self.snapshot(upstream)).state
+        state = await self.store_for(upstream).record_success(upstream)
+        self._observe(upstream, before, state)
+        return state
 
     async def record_failure(self, upstream: str) -> BreakerState:
+        before = (await self.snapshot(upstream)).state
         state = await self.store_for(upstream).record_failure(upstream)
-        if state is BreakerState.OPEN:
+        if state is BreakerState.OPEN and before is not BreakerState.OPEN:
             logger.warning("Circuit breaker for %s is now open", upstream)
+        self._observe(upstream, before, state)
         return state
+
+    @staticmethod
+    def _observe(upstream: str, before: BreakerState, after: BreakerState) -> None:
+        """Keep the gauge current, and count only genuine changes.
+
+        Counting every call would make the transition counter a duplicate of
+        the request rate; it is only interesting when the state actually
+        moved."""
+        if before is after:
+            observe_breaker_state(upstream, after.value)
+        else:
+            observe_breaker_transition(upstream, after.value)
 
     async def snapshot(self, upstream: str) -> BreakerSnapshot:
         return await self.store_for(upstream).snapshot(upstream)

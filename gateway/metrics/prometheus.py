@@ -99,6 +99,52 @@ auth_attempts_total = Counter(
 )
 
 
+# Breaker state as a number, because Prometheus only stores numbers.
+# 0 closed, 1 open, 2 half open. Encoded rather than using a label per state
+# so a single query graphs the state over time; a label per state would need
+# three series and a max() to read.
+circuit_breaker_state = Gauge(
+    "gateway_circuit_breaker_state",
+    "Circuit breaker state per upstream (0=closed, 1=open, 2=half_open)",
+    ["upstream"],
+    registry=REGISTRY,
+)
+
+# Transitions, which is what alerting actually wants. A gauge shows the
+# current state, but a breaker that opens and closes repeatedly looks calm on
+# a gauge sampled every 15 seconds and obvious on a counter.
+circuit_breaker_transitions_total = Counter(
+    "gateway_circuit_breaker_transitions_total",
+    "Circuit breaker state changes",
+    ["upstream", "to_state"],
+    registry=REGISTRY,
+)
+
+# Requests refused without ever reaching the upstream.
+circuit_breaker_rejections_total = Counter(
+    "gateway_circuit_breaker_rejections_total",
+    "Requests refused because the breaker was open",
+    ["upstream"],
+    registry=REGISTRY,
+)
+
+STATE_VALUES = {"closed": 0, "open": 1, "half_open": 2}
+
+
+def observe_breaker_state(upstream: str, state: str) -> None:
+    """Set the gauge for one upstream."""
+    circuit_breaker_state.labels(upstream=upstream).set(STATE_VALUES.get(state, 0))
+
+
+def observe_breaker_transition(upstream: str, to_state: str) -> None:
+    observe_breaker_state(upstream, to_state)
+    circuit_breaker_transitions_total.labels(upstream=upstream, to_state=to_state).inc()
+
+
+def observe_breaker_rejection(upstream: str) -> None:
+    circuit_breaker_rejections_total.labels(upstream=upstream).inc()
+
+
 def observe_rate_limit(algorithm: str, route: str, allowed: bool) -> None:
     rate_limit_decisions_total.labels(
         algorithm=algorithm,
