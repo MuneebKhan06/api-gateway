@@ -30,6 +30,7 @@ from gateway.logging_config import configure_logging
 from gateway.middleware.auth import AuthMiddleware
 from gateway.middleware.circuit_breaker import CircuitBreakerMiddleware
 from gateway.middleware.correlation import CorrelationIdMiddleware, get_request_id
+from gateway.metrics.middleware import MetricsMiddleware
 from gateway.middleware.rate_limiter import RateLimitMiddleware
 from gateway.proxy import ReverseProxy, UpstreamTimeout, UpstreamUnavailable
 from gateway.rate_limit.factory import RateLimiterRegistry
@@ -149,6 +150,10 @@ def create_app(
     app.add_middleware(CircuitBreakerMiddleware)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(AuthMiddleware)
+    # Just inside correlation, so the duration it measures covers everything
+    # the gateway did: auth, rate limiting, breaker check and the proxy hop.
+    # That is the number the client actually experienced.
+    app.add_middleware(MetricsMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
 
     @app.get("/health", tags=["gateway"])
