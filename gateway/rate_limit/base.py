@@ -20,6 +20,8 @@ from dataclasses import dataclass
 
 import redis.asyncio as redis
 
+from gateway.metrics.prometheus import observe_degraded
+
 logger = logging.getLogger(__name__)
 
 KEY_PREFIX = "ratelimit"
@@ -114,6 +116,7 @@ class BaseRateLimiter(ABC):
         the counter store is down turns a Redis outage into a total gateway
         outage. An unmetered window is the lesser failure.
         """
+        observe_degraded(f"rate_limiter_{self.name}")
         logger.error(
             "Rate limiter %s could not reach Redis, allowing request: %s", self.name, exc
         )

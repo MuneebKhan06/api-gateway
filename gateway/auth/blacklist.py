@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 import redis.asyncio as redis
 
 from gateway.auth.blacklist_cache import BlacklistCache
+from gateway.metrics.prometheus import observe_degraded
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,7 @@ class TokenBlacklist:
         try:
             found = await self._redis.exists(self._key(jti)) == 1
         except Exception as exc:
+            observe_degraded("token_blacklist")
             logger.error("Blacklist check failed, allowing request: %s", exc)
             # Deliberately not cached. Caching a failure would extend a brief
             # Redis blip into several seconds of unchecked tokens per instance.

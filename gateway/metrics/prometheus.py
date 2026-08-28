@@ -84,6 +84,25 @@ upstream_duration_seconds = Histogram(
 )
 
 
+# Times the gateway carried on without a backing service it normally depends
+# on. Three components fail open when Redis is unreachable: the token
+# blacklist, the rate limiters, and breaker permission checks. Failing open is
+# the right call, because refusing every request would turn a Redis blip into
+# a full outage, but it means the gateway is quietly enforcing less than it
+# claims to. Until now that was visible only as a log line.
+degraded_operations_total = Counter(
+    "gateway_degraded_operations_total",
+    "Operations that proceeded without their backing service",
+    ["component", "reason"],
+    registry=REGISTRY,
+)
+
+
+def observe_degraded(component: str, reason: str = "redis_unavailable") -> None:
+    """Record that a component failed open rather than enforcing."""
+    degraded_operations_total.labels(component=component, reason=reason).inc()
+
+
 def observe_upstream_duration(upstream: str, method: str, duration_seconds: float) -> None:
     upstream_duration_seconds.labels(upstream=upstream, method=method).observe(
         duration_seconds
