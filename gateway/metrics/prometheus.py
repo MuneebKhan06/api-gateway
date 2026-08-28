@@ -98,6 +98,42 @@ degraded_operations_total = Counter(
 )
 
 
+# Health check results as gauges.
+#
+# /health already answers this, but only to whoever asks. Exporting it means
+# Grafana can graph an upstream going unhealthy against the traffic and error
+# rate at that moment, and alerting can fire on it without something polling
+# the endpoint and turning a health check into a monitored service of its own.
+upstream_health = Gauge(
+    "gateway_upstream_health",
+    "Upstream reachability from the gateway (1=healthy, 0=not)",
+    ["upstream"],
+    registry=REGISTRY,
+)
+
+dependency_health = Gauge(
+    "gateway_dependency_health",
+    "Backing service reachability (1=connected, 0=not)",
+    ["dependency"],
+    registry=REGISTRY,
+)
+
+HEALTHY_STATES = {"healthy", "connected"}
+
+
+def observe_health(upstreams: dict[str, str], dependencies: dict[str, str]) -> None:
+    """Publish the result of one health check.
+
+    Anything that is not outright healthy reads as 0, including an upstream
+    reported from breaker state rather than probed. A breaker that is open is
+    a service the gateway cannot use, whether or not it was contacted.
+    """
+    for name, state in upstreams.items():
+        upstream_health.labels(upstream=name).set(1 if state in HEALTHY_STATES else 0)
+    for name, state in dependencies.items():
+        dependency_health.labels(dependency=name).set(1 if state in HEALTHY_STATES else 0)
+
+
 def observe_degraded(component: str, reason: str = "redis_unavailable") -> None:
     """Record that a component failed open rather than enforcing."""
     degraded_operations_total.labels(component=component, reason=reason).inc()

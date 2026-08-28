@@ -28,6 +28,7 @@ from gateway.db.connection import Database
 from gateway.health import check_dependencies, check_upstreams, overall_status
 from gateway.logging_config import configure_logging
 from gateway.metrics.middleware import MetricsMiddleware
+from gateway.metrics.prometheus import observe_health
 from gateway.metrics.routes import router as metrics_router
 from gateway.middleware.auth import AuthMiddleware
 from gateway.middleware.circuit_breaker import CircuitBreakerMiddleware
@@ -172,6 +173,10 @@ def create_app(
             check_upstreams(app.state.proxy, routes, breaker_states),
             check_dependencies(app.state.redis, app.state.database),
         )
+        # Publish the same answer as metrics, so it can be graphed against
+        # traffic and alerted on without polling this endpoint.
+        observe_health(upstreams, dependencies)
+
         return {
             "status": overall_status(upstreams, dependencies),
             "routes_loaded": len(routes),

@@ -409,3 +409,116 @@ Caught it before committing. It is not auth specific, so it now lives in the
 gateway schemas and auth re-exports it.
 
 422 tests passing. Tomorrow: Prometheus metrics and the Grafana dashboard.
+
+## Day 6
+
+Observability day. The gateway can now be watched rather than guessed at.
+
+**Own registry, not the default one.** prometheus_client has a module level
+default registry, and using it makes tests order dependent: counters keep
+their values between tests, and registering the same metric name twice raises.
+An explicit CollectorRegistry costs one keyword argument per metric and makes
+the whole thing testable. There is a test asserting the gateway's metrics are
+not on the global registry, because that is the sort of thing that gets
+undone by accident.
+
+**Histogram, not summary.** Summaries compute quantiles inside the process,
+which means the p95 from three gateway instances cannot be combined; there is
+no correct way to average a percentile. Histograms ship bucket counts and
+Prometheus does the quantile server side across every instance. With more than
+one gateway there is only one right answer here.
+
+Picked my own buckets rather than the library defaults. The default set tops
+out at 10s with only ten buckets, which is far too coarse at the fast end: a
+proxied request that is behaving costs single digit milliseconds, so almost
+everything lands in the first bucket and the graph is useless. The buckets
+here are dense below 100ms with a long tail out to 30s for upstreams that are
+timing out.
+
+**Cardinality is the thing that kills metric systems.** Every distinct
+combination of label values is a separate time series held in memory. The
+request path is never a label, because anyone can request any URL and that is
+unbounded. The matched route's upstream is used instead, which is bounded by
+the route table, and everything unmatched collapses into a single `unmatched`
+bucket. There are tests for both, including one that walks every exported
+series and asserts no label value contains a request path.
+
+Same reasoning for the rate limiter metrics: labelled by route, not by client.
+Per client series would grow without limit, and the useful question is which
+routes are throttling, not which user hit a limit.
+
+**Errors are a separate metric, not derived from status codes.** A 503 from
+an open breaker and a 503 forwarded from a sick upstream are the same status
+and completely different problems. `error_type` carries the distinction, so
+`circuit_open` and `upstream_unavailable` can be alerted on separately.
+
+**The metrics endpoint excludes itself.** Prometheus scrapes every 15 seconds
+forever. Counting those would eventually drown the real traffic in metrics
+about collecting metrics.
+
+That test needed fixing after I wrote it. I asserted no series existed with
+`upstream="gateway"`, which was wrong: `/gateway/routes` and the breaker
+endpoints legitimately share that label. Changed it to compare the count
+across several scrapes, which is what I actually meant.
+
+**Breaker state has to be a number.** Prometheus stores numbers, so the state
+is encoded 0 closed, 1 open, 2 half open. The alternative, a label per state,
+needs three series and a max() to read, and cannot be graphed as a single
+line.
+
+The gauge is not enough on its own, though. A breaker that opens and closes
+repeatedly looks calm on a gauge sampled every 15 seconds, because the sample
+usually lands while it is closed. A transition counter makes flapping obvious,
+and the flapping alert is written against that rather than the gauge.
+
+Only genuine changes are counted. Counting every call would make the
+transition counter a slower copy of the request rate.
+
+**Dashboard and alerts are tested against the metric names.** A dashboard
+panel querying a metric that does not exist renders an empty graph, which
+looks exactly like an outage. An alert on a metric that does not exist never
+fires at all, which is the worst failure mode an alert can have. So there are
+tests that extract every `gateway_*` name from the dashboard JSON and the
+alert rules and assert each one is actually registered. Cheap to write, and it
+catches the class of bug where a metric gets renamed and the dashboard is not
+updated.
+
+Generated the dashboard JSON from a small Python script rather than editing it
+by hand. Panel ids, grid positions and datasource refs are repetitive and easy
+to get subtly wrong. The JSON is committed, so nothing has to run the
+generator to use the dashboard.
+
+**Improving the proxy: splitting upstream time from gateway overhead.** Until
+today there was one latency metric covering the whole request, which means a
+slow upstream and a slow gateway are indistinguishable. The proxy now records
+the upstream call separately, and the difference between the two is the
+gateway's own overhead, which is the number the README's benchmark table is
+about.
+
+Two details that mattered. Failures are still timed: dropping them would make
+an upstream appear faster the worse it got. And the measurement stops at the
+response headers, not the last byte of the body, because the body streams to
+the client at whatever rate the client reads and that is not the upstream
+being slow.
+
+**Improving degraded mode visibility.** Three components fail open when Redis
+is unreachable: the blacklist, the rate limiters, breaker permission checks.
+Failing open is the right call, but it means the gateway is quietly enforcing
+less than it claims to, and until now that was visible only as a log line
+nobody reads until afterwards. It is a counter now, labelled by component, so
+it can be alerted on.
+
+**Improving the health check: exporting it.** /health answers whoever asks.
+Exporting the same result as gauges means an upstream going unhealthy can be
+graphed against the traffic and error rate at that moment, and alerted on
+without something polling the endpoint and turning the health check into a
+monitored service of its own. An upstream reported from breaker state counts
+as unhealthy: a service the gateway has stopped calling is unusable whether or
+not it was contacted.
+
+**On commit hygiene.** Twice today `git add` swept work belonging to a later
+commit into an earlier one, the same mistake as Day 4. Caught both before
+pushing and split them back apart. The habit I need is staging by file from
+the start rather than reaching for `-A`.
+
+534 tests passing. Tomorrow: benchmarks, the load test, and the README.
