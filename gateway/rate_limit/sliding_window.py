@@ -24,16 +24,28 @@ from gateway.rate_limit.base import BaseRateLimiter, RateLimitResult
 logger = logging.getLogger(__name__)
 
 # KEYS[1] sorted set of request timestamps
-# ARGV[1] limit, ARGV[2] window seconds, ARGV[3] now, ARGV[4] unique member id
+# ARGV[1] limit, ARGV[2] window seconds, ARGV[3] clock override, ARGV[4] member
 #
 # The member id has to be unique per request. Scoring by timestamp alone means
 # two requests in the same millisecond collide on the same member and the
 # second silently overwrites the first, so the client gets a free request.
+#
+# The clock is read here rather than passed in, for the same reason as the
+# token bucket: fetching TIME from Python first cost an extra round trip per
+# check, and Redis 5 replicates a script's effects rather than the script, so
+# calling TIME inside one is safe. ARGV[3] overrides it for tests.
 LUA = """
 local limit = tonumber(ARGV[1])
 local window = tonumber(ARGV[2])
-local now = tonumber(ARGV[3])
 local member = ARGV[4]
+
+local now
+if ARGV[3] ~= '' then
+    now = tonumber(ARGV[3])
+else
+    local clock = redis.call('TIME')
+    now = tonumber(clock[1]) + (tonumber(clock[2]) / 1000000)
+end
 
 local cutoff = now - window
 
@@ -73,20 +85,27 @@ return {allowed, remaining, tostring(retry_after)}
 class SlidingWindowLimiter(BaseRateLimiter):
     name = "sliding_window"
 
+    def __init__(self, client, limit: int, window_seconds: int, clock=None) -> None:
+        super().__init__(client, limit, window_seconds)
+        # See the token bucket: None means the script reads the clock itself,
+        # keeping the check to a single round trip.
+        self._clock = clock
+
     @staticmethod
     def lua_script() -> str:
         return LUA
 
     async def check(self, identifier: str, route_prefix: str) -> RateLimitResult:
         key = self._key(identifier, route_prefix)
-        now = await self._now()
+        now_arg = "" if self._clock is None else str(await self._clock())
         # Unique per request, so two requests in the same instant cannot
-        # collide on one sorted set member.
-        member = f"{now}:{uuid.uuid4().hex[:12]}"
+        # collide on one sorted set member. A random suffix is enough on its
+        # own, so this no longer needs the timestamp the script now owns.
+        member = uuid.uuid4().hex
 
         try:
             allowed, remaining, retry_after = await self._script(
-                keys=[key], args=[self._limit, self._window, now, member]
+                keys=[key], args=[self._limit, self._window, now_arg, member]
             )
         except Exception as exc:
             return self._allow_on_redis_failure(exc)
@@ -121,6 +140,11 @@ class SlidingWindowLimiter(BaseRateLimiter):
         return await self._redis.zcard(self._key(identifier, route_prefix))
 
     async def _now(self) -> float:
-        """Redis clock, not the local one, so multiple gateway instances agree."""
+        """Redis clock, for callers reasoning about the window outside a check.
+
+        Not on the hot path any more; the script reads the clock itself.
+        """
+        if self._clock is not None:
+            return await self._clock()
         seconds, microseconds = await self._redis.time()
         return float(seconds) + float(microseconds) / 1_000_000

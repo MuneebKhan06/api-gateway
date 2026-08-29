@@ -21,9 +21,15 @@ async def redis_client():
 
 
 @pytest.fixture
-def limiter(redis_client):
+def clock():
+    """Explicit clock so refill can be driven without sleeping."""
+    return FrozenClock()
+
+
+@pytest.fixture
+def limiter(redis_client, clock):
     # 10 requests per 10 seconds, so it refills at exactly 1 token per second.
-    return TokenBucketLimiter(redis_client, limit=10, window_seconds=10)
+    return TokenBucketLimiter(redis_client, limit=10, window_seconds=10, clock=clock)
 
 
 class FrozenClock:
@@ -37,13 +43,6 @@ class FrozenClock:
 
     def advance(self, seconds: float) -> None:
         self.now += seconds
-
-
-@pytest.fixture
-def clock(limiter):
-    frozen = FrozenClock()
-    limiter._now = frozen
-    return frozen
 
 
 class TestBurst:
@@ -170,6 +169,15 @@ class TestState:
     async def test_refill_rate_is_derived_from_the_limit(self, redis_client):
         limiter = TokenBucketLimiter(redis_client, limit=100, window_seconds=60)
         assert limiter.refill_rate == pytest.approx(100 / 60)
+
+    async def test_without_an_injected_clock_the_script_reads_its_own(self, redis_client):
+        """Production path: no clock passed, so the whole check is one round
+        trip and Redis supplies the time."""
+        limiter = TokenBucketLimiter(redis_client, limit=3, window_seconds=60)
+        assert limiter._clock is None
+
+        verdicts = [(await limiter.check(CLIENT, ROUTE)).allowed for _ in range(4)]
+        assert verdicts == [True, True, True, False]
 
     async def test_reset_gives_back_a_full_bucket(self, limiter, clock):
         for _ in range(10):

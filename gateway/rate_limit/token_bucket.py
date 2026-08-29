@@ -34,14 +34,33 @@ logger = logging.getLogger(__name__)
 #
 # Stored as a hash of two fields: tokens remaining, and when they were counted.
 #
-# `now` is passed in rather than read from Redis TIME because a Lua script that
-# calls TIME is non-deterministic, which historically made scripts unsafe to
-# replicate. Passing the caller's clock keeps the script a pure function of its
-# inputs.
+# The clock is read inside the script with TIME rather than passed in.
+#
+# The original version called TIME from Python first and passed the result as
+# an argument, on the reasoning that a script calling TIME is
+# non-deterministic and so unsafe to replicate. That was true under Redis 4
+# and earlier, which replicated the script itself to replicas and needed it to
+# produce identical results there. Redis 5 replicates a script's effects
+# instead, so a script may call TIME.
+#
+# It cost a full extra round trip per rate limit check. The benchmark made
+# that plain: this limiter ran at roughly half the throughput of fixed window,
+# which does its work in one call, and the gap was entirely the second trip.
 LUA = """
 local capacity = tonumber(ARGV[1])
 local refill_rate = tonumber(ARGV[2])
-local now = tonumber(ARGV[3])
+
+-- ARGV[3] is an explicit clock reading, or empty to use Redis's own. Tests
+-- pass one so refill can be driven without sleeping; production leaves it
+-- empty so the whole check is a single round trip.
+local now
+if ARGV[3] ~= '' then
+    now = tonumber(ARGV[3])
+else
+    -- Redis TIME returns seconds and microseconds as separate strings.
+    local clock = redis.call('TIME')
+    now = tonumber(clock[1]) + (tonumber(clock[2]) / 1000000)
+end
 
 local bucket = redis.call('HMGET', KEYS[1], 'tokens', 'updated_at')
 local tokens = tonumber(bucket[1])
@@ -93,10 +112,14 @@ return {allowed, tostring(tokens), tostring(retry_after), tostring(reset_after)}
 class TokenBucketLimiter(BaseRateLimiter):
     name = "token_bucket"
 
-    def __init__(self, client, limit: int, window_seconds: int) -> None:
+    def __init__(self, client, limit: int, window_seconds: int, clock=None) -> None:
         super().__init__(client, limit, window_seconds)
         # Tokens per second. A limit of 100 per 60s refills at ~1.67/s.
         self._refill_rate = limit / window_seconds
+        # An awaitable returning a unix timestamp. Left as None in normal
+        # operation so the script reads the clock itself in the same round
+        # trip; supplied by tests that need to move time deliberately.
+        self._clock = clock
 
     @property
     def refill_rate(self) -> float:
@@ -108,11 +131,11 @@ class TokenBucketLimiter(BaseRateLimiter):
 
     async def check(self, identifier: str, route_prefix: str) -> RateLimitResult:
         key = self._key(identifier, route_prefix)
-        now = await self._now()
+        now_arg = "" if self._clock is None else str(await self._clock())
 
         try:
             allowed, tokens, retry_after, reset_after = await self._script(
-                keys=[key], args=[self._limit, self._refill_rate, now]
+                keys=[key], args=[self._limit, self._refill_rate, now_arg]
             )
         except Exception as exc:
             return self._allow_on_redis_failure(exc)
@@ -127,11 +150,13 @@ class TokenBucketLimiter(BaseRateLimiter):
         )
 
     async def _now(self) -> float:
-        """Read the clock from Redis, not from the gateway process.
+        """Redis clock, as a separate call.
 
-        With several gateway instances sharing one Redis, using each process's
-        own clock means their buckets disagree by whatever their clock skew
-        happens to be. Redis is the one clock they all already share.
+        The script reads the clock itself, so this is not on the hot path any
+        more. It stays because the tests drive time through it, and because
+        anything reasoning about a bucket outside a check still needs the same
+        clock the script uses. Every gateway instance shares Redis, so this is
+        the one clock they all agree on regardless of their own skew.
         """
         seconds, microseconds = await self._redis.time()
         return float(seconds) + float(microseconds) / 1_000_000

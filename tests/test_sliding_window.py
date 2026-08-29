@@ -22,8 +22,13 @@ async def redis_client():
 
 
 @pytest.fixture
-def limiter(redis_client):
-    return SlidingWindowLimiter(redis_client, limit=5, window_seconds=60)
+def clock():
+    return FrozenClock()
+
+
+@pytest.fixture
+def limiter(redis_client, clock):
+    return SlidingWindowLimiter(redis_client, limit=5, window_seconds=60, clock=clock)
 
 
 class FrozenClock:
@@ -35,13 +40,6 @@ class FrozenClock:
 
     def advance(self, seconds: float) -> None:
         self.now += seconds
-
-
-@pytest.fixture
-def clock(limiter):
-    frozen = FrozenClock()
-    limiter._now = frozen
-    return frozen
 
 
 class TestCounting:
@@ -114,9 +112,10 @@ class TestNoBoundaryProblem:
         against a 5 per 60s limit. Sliding window measures from now, so the
         second burst sees the first one and refuses.
         """
-        sliding = SlidingWindowLimiter(redis_client, limit=5, window_seconds=60)
         clock = FrozenClock(start=1_000_059.0)
-        sliding._now = clock
+        sliding = SlidingWindowLimiter(
+            redis_client, limit=5, window_seconds=60, clock=clock
+        )
 
         for _ in range(5):
             assert (await sliding.check(CLIENT, ROUTE)).allowed is True
