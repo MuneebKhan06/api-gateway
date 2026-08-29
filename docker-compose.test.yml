@@ -1,0 +1,39 @@
+# Backing services for the integration suite.
+#
+# Separate from docker-compose.yml and deliberately minimal: the integration
+# tests drive the gateway in process, so they need Redis and Postgres but not
+# the gateway container, the upstreams, or the observability stack.
+#
+# Non-default ports so this can run alongside the development stack without
+# fighting it for 6379 and 5432.
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6399:6379"
+    # No persistence: every run should start from nothing.
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: gateway
+      POSTGRES_DB: gateway
+    ports:
+      - "5439:5432"
+    # tmpfs rather than a volume, so the database is discarded with the
+    # container and tests cannot inherit state from a previous run.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
