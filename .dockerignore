@@ -14,3 +14,6 @@ docs/
 .env
 *.md
 docker-compose*.yml
+
+# Kept out of the build context but note alembic/ and alembic.ini are NOT
+# ignored: the gateway image needs them to create its own schema.

@@ -1,22 +1,51 @@
-FROM python:3.11-slim AS base
+# Multi-stage build.
+#
+# The build stage compiles wheels; the runtime stage gets only the installed
+# packages and the application. Nothing that was needed to build a dependency
+# stays in the shipped image.
 
-# Bytecode files and stdout buffering are both unhelpful in a container:
-# the first bloats the image, the second hides logs when the process dies.
+FROM python:3.11-slim AS builder
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
+WORKDIR /build
+
+# A compiler is needed to build some wheels and has no business in the final
+# image, which is most of the reason this is split in two.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copied alone so the dependency layer stays cached when only code changes.
+COPY requirements.txt .
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
+
 WORKDIR /app
 
-# Requirements are copied on their own so the dependency layer stays cached
-# when only application code changes.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Just the virtualenv, so no gcc and no build caches ship to production.
+COPY --from=builder /opt/venv /opt/venv
 
 COPY gateway/ ./gateway/
 COPY routes.yaml ./routes.yaml
 
-# Running as root inside a container is an unnecessary risk.
+# Migrations were missing from the previous image, which meant the container
+# could serve traffic but could not create the schema it needed. Running them
+# required a second copy of the project on the host, which defeats the point
+# of shipping an image.
+COPY alembic/ ./alembic/
+COPY alembic.ini ./alembic.ini
+
 RUN useradd --create-home --uid 1000 gateway && chown -R gateway:gateway /app
 USER gateway
 
@@ -25,4 +54,9 @@ EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
+# Migrations are deliberately not run here. An entrypoint that migrates on
+# start means every replica races to apply the same migration on a rolling
+# deploy. Run them as a separate step:
+#
+#     docker compose run --rm gateway alembic upgrade head
 CMD ["uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", "8000"]
