@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# A new push to the same branch makes the previous run irrelevant, so cancel
+# it rather than paying for both.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install ruff
+        run: pip install ruff==0.8.4
+
+      - name: Lint
+        run: ruff check gateway/ upstream/ tests/ scripts/
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # Both versions run to completion. Knowing a failure is version specific
+      # is worth more than stopping early.
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest tests/ -v --cov=gateway --cov-report=term-missing
+
+  integration:
+    runs-on: ubuntu-latest
+
+    # The unit suite runs against fakeredis and SQLite. This one runs the same
+    # code against the real thing, because Lua execution and Postgres types are
+    # exactly where a fake and the real server can quietly disagree.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gateway
+          POSTGRES_PASSWORD: gateway
+          POSTGRES_DB: gateway
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://gateway:gateway@localhost:5432/gateway
+        run: alembic upgrade head
+
+      - name: Run integration tests
+        env:
+          REDIS_URL: redis://localhost:6379/0
+          DATABASE_URL: postgresql+asyncpg://gateway:gateway@localhost:5432/gateway
+        run: pytest tests/ -v -m integration
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Building the images in CI catches a broken Dockerfile before it
+      # reaches anyone trying to run the stack from a fresh checkout.
+      - name: Build gateway image
+        run: docker build -f docker/Dockerfile.gateway -t api-gateway:ci .
+
+      - name: Build upstream image
+        run: docker build -f docker/Dockerfile.upstream -t api-gateway-upstream:ci .
+
+      - name: Validate compose file
+        run: docker compose config --quiet
