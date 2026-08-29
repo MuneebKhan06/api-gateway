@@ -522,3 +522,96 @@ pushing and split them back apart. The habit I need is staging by file from
 the start rather than reaching for `-A`.
 
 534 tests passing. Tomorrow: benchmarks, the load test, and the README.
+
+## Day 7
+
+Last day. Benchmarks, load tests, CI, and the README.
+
+**Integration tests first, because CI needed something real to run.** The whole
+suite until now ran against fakeredis and SQLite, which is fast and covers the
+logic but cannot cover the places a fake and the real server disagree. Two
+matter here: Lua execution, and Postgres types.
+
+Both paid off immediately. The concurrency test, 50 simultaneous requests
+against a limit of 10, passes on real Redis, which is the actual proof that the
+Lua approach is correct rather than a claim about it. And the timezone test
+only means anything against Postgres, because SQLite has no timezone type and
+was the reason that bug hid on Day 3 in the first place.
+
+They skip when the services are not running, so `pytest` on a laptop with
+nothing installed still works.
+
+**The CI file I first wrote would have failed.** Two things in it were
+aspirational rather than true: a `ruff format --check` step, when 24 files
+would have been reformatted and the project's gate has always been `ruff
+check`; and `pytest -m integration`, which collects nothing and exits non-zero
+when no integration tests exist. Writing CI that describes what you wish were
+true is a good way to get a red badge and start ignoring it. Dropped the format
+gate and wrote the integration tests before the workflow that runs them.
+
+**The benchmark found a real problem.** Fixed window came out at nearly twice
+the throughput of the other two, which made no sense: all three are one script
+doing a similar amount of work. The difference was that token bucket and
+sliding window each called Redis `TIME` from Python before running their
+script, so every check was two round trips instead of one.
+
+That design was deliberate and, at the time, correct: a script that calls
+`TIME` is non-deterministic, and Redis 4 and earlier replicated the script
+itself to replicas, which required identical results there. Redis 5 replicates
+a script's effects instead. The constraint had expired and I had not noticed.
+
+Moving the clock inside the script took token bucket from 57 percent of fixed
+window's throughput to 86, and sliding window from 61 to 95. The tests needed a
+way to still drive time deliberately, so the limiters take an optional clock:
+supplied, it goes to the script as an argument; absent, the script reads the
+clock itself and the check stays one round trip.
+
+This is the sort of thing that only turns up because the benchmark is a real
+script producing real numbers rather than a table of estimates.
+
+**Production config guards.** Every setting they check is harmless locally and
+dangerous in production, and each fails silently: the example JWT secret is in
+this repository, so anyone who has read it can forge a token, and nothing looks
+wrong until someone does. The gateway now refuses to start in production with
+the example secret, a short secret, debug on, or the example database password.
+All problems are reported at once, because being told about them one at a time
+is a slow way to learn what is wrong.
+
+**The Docker image could not create its own schema.** It shipped the gateway but
+not `alembic/` or `alembic.ini`, so running migrations meant having a second
+copy of the project on the host, which rather defeats shipping an image. Fixed,
+and while in there, split the build into two stages so the compiler needed to
+build wheels does not ship to production. Built the image and ran `alembic
+heads` inside it to check rather than assuming.
+
+Migrations are deliberately not in the entrypoint. Migrating on start means
+every replica races to apply the same migration during a rolling deploy.
+
+**Measuring gateway overhead.** The proxy overhead table needed real numbers,
+and the Day 6 work made them available: end to end duration and upstream
+duration are separate histograms, so the difference is the gateway's own cost.
+Ran 400 requests per scenario through the real middleware chain and read both.
+
+Bare proxying costs about 2ms, JWT auth adds about 0.6ms, and the full chain
+costs about 10ms because rate limiting and the breaker check are each another
+Redis round trip. Labelled clearly in the README as an in-process measurement
+with no network between gateway and upstream, because that is what it is: it
+isolates the gateway's processing cost and is not a model of a deployment.
+
+**The README.** Written last, deliberately, so it describes what was built
+rather than what was planned. Three places where it says something different
+from the original plan, and each is called out rather than quietly changed:
+bcrypt instead of passlib, refresh rotation which the plan explicitly deferred,
+and the single round trip limiters.
+
+All the TBD tables are filled with measured numbers, and the commands that
+produced them are in the repository.
+
+563 tests passing.
+
+The thing I would take from the week: almost every genuinely interesting bug
+came from a place where two systems disagreed rather than from a place where
+one was wrong. SQLite against Postgres on timezones. fakeredis against Redis on
+Lua. A Redis 4 constraint against a Redis 7 server. None of those show up in
+code review, and all of them showed up the moment something real was run
+against something real.
