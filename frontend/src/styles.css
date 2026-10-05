@@ -1,0 +1,31 @@
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --border: #e3e6ea;
+  --text: #16191d;
+  --muted: #5f6b77;
+  --accent: #0f766e;
+
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+}
+
+.placeholder {
+  max-width: 640px;
+  margin: 15vh auto;
+  padding: 0 16px;
+}
+
+.placeholder p {
+  color: var(--muted);
+}
