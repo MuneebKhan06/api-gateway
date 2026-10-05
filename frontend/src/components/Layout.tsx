@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { api } from "../api/client";
 import { usePolling } from "../hooks/usePolling";
+import { useSession } from "../session";
 import StatusPill from "./StatusPill";
 import ThemeToggle from "./ThemeToggle";
 
@@ -44,6 +45,7 @@ export default function Layout() {
   // The header indicator is the console's heartbeat: if this goes red, every
   // page below it is going to show errors, and this says why.
   const health = usePolling(api.health, 5000);
+  const { session } = useSession();
   const status = health.result
     ? health.result.networkError
       ? "offline"
@@ -81,7 +83,18 @@ export default function Layout() {
               label={status === "unknown" ? "connecting" : status}
             />
           </div>
-          <span className="hint">Live, proxied through <code>/gw</code></span>
+          <div className="row">
+            <span className="hint">Live, proxied through <code>/gw</code></span>
+            {session ? (
+              <NavLink to="/auth" className="pill ok">
+                {session.email}
+              </NavLink>
+            ) : (
+              <NavLink to="/auth" className="pill plain">
+                signed out
+              </NavLink>
+            )}
+          </div>
         </header>
         <main className="content">
           <Outlet />

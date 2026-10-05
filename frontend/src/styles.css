@@ -645,3 +645,72 @@ pre.code {
 .pipeline.compact .stage {
   padding-bottom: 8px;
 }
+
+/* Authentication */
+
+.result-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.result-log li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.log-note {
+  font-size: 13px;
+  padding-left: 8px;
+  border-left: 2px solid var(--accent);
+}
+
+pre.jwt {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.jwt-header {
+  color: var(--bad);
+}
+
+.jwt-payload {
+  color: var(--info);
+}
+
+.jwt-signature {
+  color: var(--ok);
+}
+
+table.claims {
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+table.claims td {
+  padding: 5px 8px;
+  word-break: break-all;
+}
+
+table.claims td:first-child {
+  width: 70px;
+}
+
+.session-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+a.pill {
+  text-decoration: none;
+}
