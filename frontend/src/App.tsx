@@ -1,21 +1,14 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import ComingSoon from "./pages/ComingSoon";
+import Overview from "./pages/Overview";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route element={<Layout />}>
-          <Route
-            index
-            element={
-              <ComingSoon
-                title="Overview"
-                summary="Gateway health, its dependencies, every upstream and the live route table."
-              />
-            }
-          />
+          <Route index element={<Overview />} />
           <Route
             path="auth"
             element={
