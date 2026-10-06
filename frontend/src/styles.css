@@ -878,3 +878,70 @@ pre.response-body {
 .trace-headline.warn {
   color: var(--warn);
 }
+
+/* Playground history and curl export */
+
+.playground-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+.curl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.curl pre {
+  font-size: 12px;
+}
+
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+button.history-item {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 400;
+}
+
+button.history-item.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.history-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.history-text code,
+.history-text .hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1000px) {
+  .playground-top {
+    grid-template-columns: 1fr;
+  }
+}
