@@ -777,3 +777,72 @@ button.preset span {
 textarea {
   resize: vertical;
 }
+
+/* Response viewer */
+
+.status-pill {
+  font-size: 14px;
+  padding: 3px 12px;
+}
+
+.response-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.section-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+}
+
+pre.response-body {
+  max-height: 360px;
+  overflow-y: auto;
+  font-size: 12.5px;
+}
+
+.header-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.header-list dt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.header-value {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  word-break: break-all;
+}
+
+.header-list dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+@media (max-width: 860px) {
+  .response-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.identity-list {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+
+.identity-list li {
+  margin: 2px 0;
+}
