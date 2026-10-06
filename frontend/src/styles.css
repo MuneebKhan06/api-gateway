@@ -714,3 +714,28 @@ table.claims td:first-child {
 a.pill {
   text-decoration: none;
 }
+
+.stage.answered .stage-index {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.stage.answered .stage-name {
+  color: var(--accent);
+}
+
+.stage.unreached {
+  opacity: 0.35;
+}
+
+.stage-note {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}

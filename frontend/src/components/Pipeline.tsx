@@ -61,14 +61,20 @@ export const STAGES: Stage[] = [
   },
 ];
 
-export type StageState = "idle" | "passed" | "stopped" | "skipped";
+/**
+ * idle: nothing sent yet. passed: ran and let the request through.
+ * stopped: refused the request. answered: produced the final response.
+ * skipped: switched off for this route. unreached: an earlier stage answered.
+ */
+export type StageState = "idle" | "passed" | "stopped" | "answered" | "skipped" | "unreached";
 
 interface PipelineProps {
   states?: Partial<Record<StageId, StageState>>;
+  notes?: Partial<Record<StageId, string>>;
   compact?: boolean;
 }
 
-export default function Pipeline({ states = {}, compact = false }: PipelineProps) {
+export default function Pipeline({ states = {}, notes = {}, compact = false }: PipelineProps) {
   return (
     <ol className={`pipeline${compact ? " compact" : ""}`}>
       {STAGES.map((stage, index) => {
@@ -80,6 +86,7 @@ export default function Pipeline({ states = {}, compact = false }: PipelineProps
               <div className="stage-name">
                 {stage.name}
                 {stage.rejects && <span className="stage-rejects">{stage.rejects}</span>}
+                {notes[stage.id] && <span className="stage-note">{notes[stage.id]}</span>}
               </div>
               {!compact && <div className="stage-detail">{stage.detail}</div>}
             </div>
