@@ -42,6 +42,12 @@ export function matchRoute(routes: RouteStatus[], path: string): RouteStatus | n
   return best;
 }
 
+/** "service-a" from "http://service-a:8001", matching the gateway's own naming. */
+function upstreamHost(route: RouteStatus | null): string | null {
+  if (!route?.upstream) return null;
+  return route.upstream.split("://", 2)[1]?.split(/[:/]/)[0] ?? route.upstream;
+}
+
 /** Stages that the route table switches off for this route. */
 function applicability(route: RouteStatus | null): Partial<Record<StageId, boolean>> {
   if (!route) return { auth: false, rate_limit: false, breaker: false, upstream: false };
@@ -123,7 +129,7 @@ export function inferTrace(result: ApiResult, route: RouteStatus | null): Trace 
     headline =
       result.status >= 500
         ? `Upstream answered ${result.status}`
-        : `Proxied to ${gh.upstreamService ?? route?.upstream ?? "the upstream"}`;
+        : `Proxied to ${gh.upstreamService ?? upstreamHost(route) ?? "the upstream"}`;
     explanation =
       result.status >= 500
         ? "The upstream itself failed. The gateway passed its answer through unchanged and recorded it as a breaker failure. Five of these in a minute opens the breaker."
@@ -155,7 +161,7 @@ export function inferTrace(result: ApiResult, route: RouteStatus | null): Trace 
 
   const notes: Partial<Record<StageId, string>> = {};
   if (gh.requestId) notes.correlation = gh.requestId.slice(0, 12);
-  if (states.auth === "passed") notes.auth = "valid token, identity forwarded";
+  if (states.auth === "passed") notes.auth = "token valid";
   if (states.auth === "skipped") notes.auth = route ? "public route" : "no route";
   if (gh.rateLimitLimit !== null && states.rate_limit !== "stopped") {
     notes.rate_limit = `${gh.rateLimitRemaining} of ${gh.rateLimitLimit} left`;

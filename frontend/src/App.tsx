@@ -3,6 +3,7 @@ import Layout from "./components/Layout";
 import Auth from "./pages/Auth";
 import ComingSoon from "./pages/ComingSoon";
 import Overview from "./pages/Overview";
+import Playground from "./pages/Playground";
 import { SessionProvider } from "./session";
 
 export default function App() {
@@ -13,15 +14,7 @@ export default function App() {
           <Route element={<Layout />}>
             <Route index element={<Overview />} />
             <Route path="auth" element={<Auth />} />
-            <Route
-              path="playground"
-              element={
-                <ComingSoon
-                  title="Request playground"
-                  summary="Send a request through the gateway and watch which middleware answers."
-                />
-              }
-            />
+            <Route path="playground" element={<Playground />} />
             <Route
               path="rate-limits"
               element={

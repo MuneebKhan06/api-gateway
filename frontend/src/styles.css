@@ -846,3 +846,35 @@ pre.response-body {
 .identity-list li {
   margin: 2px 0;
 }
+
+/* Playground */
+
+.playground-result {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.trace-headline {
+  font-weight: 650;
+  font-size: 15px;
+}
+
+.trace-headline.ok {
+  color: var(--ok);
+}
+
+.trace-headline.bad {
+  color: var(--bad);
+}
+
+@media (max-width: 1000px) {
+  .playground-result {
+    grid-template-columns: 1fr;
+  }
+}
+
+.trace-headline.warn {
+  color: var(--warn);
+}

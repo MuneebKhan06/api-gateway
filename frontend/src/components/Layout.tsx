@@ -14,7 +14,7 @@ interface NavItem {
 const EXPLORE: NavItem[] = [
   { to: "/", label: "Overview" },
   { to: "/auth", label: "Authentication" },
-  { to: "/playground", label: "Request playground", soon: true },
+  { to: "/playground", label: "Request playground" },
 ];
 
 const LABS: NavItem[] = [
