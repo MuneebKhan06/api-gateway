@@ -34,6 +34,25 @@ export function decodeJwt(token: string): { header: Record<string, unknown>; cla
   }
 }
 
+function base64UrlEncode(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/**
+ * Promote a token to admin without re-signing it, the way an attacker would
+ * try to. The payload changes and the signature does not, so the gateway
+ * must refuse it as invalid_token.
+ */
+export function tamperToken(token: string): string {
+  const decoded = decodeJwt(token);
+  if (!decoded) return token;
+  const [header, , signature] = token.split(".");
+  const payload = base64UrlEncode(JSON.stringify({ ...decoded.claims, roles: ["admin"] }));
+  return `${header}.${payload}.${signature}`;
+}
+
 /** Seconds until expiry, negative once expired, null if the token has no exp. */
 export function secondsUntilExpiry(claims: JwtClaims, now = Date.now()): number | null {
   if (typeof claims.exp !== "number") return null;
