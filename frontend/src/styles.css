@@ -1082,3 +1082,14 @@ button.route-card.active {
 .burst-controls label {
   width: 180px;
 }
+
+.comparison-cell {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.comparison-cell .chart-legend button {
+  display: none;
+}
