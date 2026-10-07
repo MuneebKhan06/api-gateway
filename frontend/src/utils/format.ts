@@ -4,6 +4,16 @@ export const ALGORITHM_LABELS: Record<string, string> = {
   fixed_window: "Fixed window",
 };
 
+/** One line on how each algorithm counts, for cards and legends. */
+export const ALGORITHM_SUMMARY: Record<string, string> = {
+  token_bucket:
+    "Starts full and refills continuously. Allows a burst up to capacity, then the sustained rate.",
+  sliding_window:
+    "Logs every accepted request. Exact over any window, at the cost of one entry per request.",
+  fixed_window:
+    "One counter per window, reset all at once. Cheapest, but bursts can straddle a reset.",
+};
+
 export function algorithmLabel(name: string): string {
   return ALGORITHM_LABELS[name] ?? name;
 }

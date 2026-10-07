@@ -4,6 +4,7 @@ import Auth from "./pages/Auth";
 import ComingSoon from "./pages/ComingSoon";
 import Overview from "./pages/Overview";
 import Playground from "./pages/Playground";
+import RateLimits from "./pages/RateLimits";
 import { SessionProvider } from "./session";
 
 export default function App() {
@@ -15,15 +16,7 @@ export default function App() {
             <Route index element={<Overview />} />
             <Route path="auth" element={<Auth />} />
             <Route path="playground" element={<Playground />} />
-            <Route
-              path="rate-limits"
-              element={
-                <ComingSoon
-                  title="Rate limiting"
-                  summary="Fire bursts at each route and compare token bucket, sliding window and fixed window."
-                />
-              }
-            />
+            <Route path="rate-limits" element={<RateLimits />} />
             <Route
               path="breakers"
               element={

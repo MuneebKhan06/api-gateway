@@ -1044,3 +1044,41 @@ button.history-item.selected {
   max-height: 260px;
   overflow-y: auto;
 }
+
+/* Rate limiting */
+
+button.route-card {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+  text-align: left;
+  font-weight: 400;
+}
+
+button.route-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.route-limit {
+  font-size: 24px;
+  font-weight: 650;
+}
+
+.route-limit span {
+  font-size: 14px;
+  font-weight: 450;
+  color: var(--muted);
+}
+
+.burst-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.burst-controls label {
+  width: 180px;
+}
