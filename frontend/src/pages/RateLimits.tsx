@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import type { RouteStatus } from "../api/types";
 import AlgorithmComparison from "../components/AlgorithmComparison";
+import BoundaryDemo from "../components/BoundaryDemo";
 import BurstRunner from "../components/BurstRunner";
 import { usePolling } from "../hooks/usePolling";
 import type { BurstSample } from "../utils/burst";
@@ -81,6 +82,7 @@ export default function RateLimits() {
       )}
 
       {limited.length > 1 && <AlgorithmComparison routes={limited} onSample={recordSample} />}
+      <BoundaryDemo />
     </>
   );
 }
