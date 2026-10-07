@@ -1093,3 +1093,30 @@ button.route-card.active {
 .comparison-cell .chart-legend button {
   display: none;
 }
+
+/* Benchmark bars */
+
+.bench-row {
+  display: grid;
+  grid-template-columns: 104px 1fr 72px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.bench-track {
+  height: 14px;
+}
+
+.bench-bar {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+  background: var(--accent);
+}
+
+.bench-value {
+  text-align: right;
+  color: var(--muted);
+}
