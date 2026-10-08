@@ -1120,3 +1120,65 @@ button.route-card.active {
   text-align: right;
   color: var(--muted);
 }
+
+/* Breaker state machine */
+
+.breaker-diagram {
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+}
+
+.breaker-diagram .edge {
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 1.5;
+}
+
+.breaker-diagram .arrow-head {
+  fill: var(--faint);
+}
+
+.breaker-diagram .edge-label {
+  fill: var(--muted);
+  font-size: 12px;
+}
+
+.breaker-diagram .node rect {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.breaker-diagram .node text {
+  fill: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.breaker-diagram .node.active.ok rect {
+  fill: var(--ok-soft);
+  stroke: var(--ok);
+}
+
+.breaker-diagram .node.active.bad rect {
+  fill: var(--bad-soft);
+  stroke: var(--bad);
+}
+
+.breaker-diagram .node.active.warn rect {
+  fill: var(--warn-soft);
+  stroke: var(--warn);
+}
+
+.breaker-diagram .node.active text {
+  fill: var(--text);
+}
+
+.breaker-diagram .node text.now {
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--muted);
+}
