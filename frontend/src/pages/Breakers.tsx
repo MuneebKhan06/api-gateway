@@ -1,5 +1,6 @@
 import { api } from "../api/client";
 import BreakerCard from "../components/BreakerCard";
+import TrafficDriver from "../components/TrafficDriver";
 import { usePolling } from "../hooks/usePolling";
 import { useSession } from "../session";
 
@@ -11,6 +12,8 @@ export default function Breakers() {
   const routes = usePolling(api.routes, 15000);
   const list = breakers.result?.data ?? [];
   const routeList = routes.result?.data ?? [];
+  const breakerRoutes = routeList.filter((route) => route.circuit_breaker_state !== "disabled");
+  const focusPath = routeList.find((route) => route.upstream === list[0]?.url)?.path_prefix;
 
   return (
     <>
@@ -26,6 +29,8 @@ export default function Breakers() {
       {breakers.result?.networkError && (
         <div className="callout bad">The gateway is not answering, so breaker state is unavailable.</div>
       )}
+
+      <TrafficDriver routes={breakerRoutes} defaultPath={focusPath} />
 
       {list.map((breaker) => (
         <BreakerCard
