@@ -1204,3 +1204,49 @@ label.inline-label {
 label.inline-label select {
   width: auto;
 }
+
+/* Circuit breakers */
+
+.breaker-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.meter-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.25s linear;
+}
+
+.meter-track.bad .meter-fill {
+  background: var(--bad);
+}
+
+.meter-track.warn .meter-fill {
+  background: var(--warn);
+}
+
+.meter-track.ok .meter-fill {
+  background: var(--ok);
+}
+
+@media (max-width: 1000px) {
+  .breaker-body {
+    grid-template-columns: 1fr;
+  }
+}

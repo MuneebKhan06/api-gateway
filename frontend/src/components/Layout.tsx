@@ -19,7 +19,7 @@ const EXPLORE: NavItem[] = [
 
 const LABS: NavItem[] = [
   { to: "/rate-limits", label: "Rate limiting" },
-  { to: "/breakers", label: "Circuit breakers", soon: true },
+  { to: "/breakers", label: "Circuit breakers" },
   { to: "/metrics", label: "Metrics", soon: true },
 ];
 

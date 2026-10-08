@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import Auth from "./pages/Auth";
+import Breakers from "./pages/Breakers";
 import ComingSoon from "./pages/ComingSoon";
 import Overview from "./pages/Overview";
 import Playground from "./pages/Playground";
@@ -17,15 +18,7 @@ export default function App() {
             <Route path="auth" element={<Auth />} />
             <Route path="playground" element={<Playground />} />
             <Route path="rate-limits" element={<RateLimits />} />
-            <Route
-              path="breakers"
-              element={
-                <ComingSoon
-                  title="Circuit breakers"
-                  summary="Make an upstream fail and watch its breaker open, recover and close."
-                />
-              }
-            />
+            <Route path="breakers" element={<Breakers />} />
             <Route
               path="metrics"
               element={
