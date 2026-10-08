@@ -1182,3 +1182,25 @@ button.route-card.active {
   font-weight: 600;
   fill: var(--muted);
 }
+
+/* Fault controls */
+
+.fault-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+label.inline-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+label.inline-label select {
+  width: auto;
+}

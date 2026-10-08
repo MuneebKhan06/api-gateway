@@ -1,25 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ApiResult } from "../api/types";
 
-export interface Polled<T> {
-  result: ApiResult<T> | null;
+export interface Polled<R> {
+  result: R | null;
   loading: boolean;
   refresh: () => Promise<void>;
   updatedAt: number | null;
 }
 
 /**
- * Call a gateway endpoint now and every `intervalMs` after.
+ * Call something now and every `intervalMs` after. Usually a gateway
+ * endpoint, so R is usually an ApiResult.
  *
  * Polling pauses while the tab is hidden: a console left open in a
  * background tab should not keep generating traffic that shows up in the
  * gateway's own metrics.
  */
-export function usePolling<T>(
-  fetcher: () => Promise<ApiResult<T>>,
-  intervalMs: number,
-): Polled<T> {
-  const [result, setResult] = useState<ApiResult<T> | null>(null);
+export function usePolling<R>(fetcher: () => Promise<R>, intervalMs: number): Polled<R> {
+  const [result, setResult] = useState<R | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const fetcherRef = useRef(fetcher);
