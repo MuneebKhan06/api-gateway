@@ -1,5 +1,6 @@
 import { api } from "../api/client";
 import BreakerCard from "../components/BreakerCard";
+import { BreakerWalkthrough, TransitionLog, useTransitions } from "../components/BreakerWalkthrough";
 import TrafficDriver from "../components/TrafficDriver";
 import { usePolling } from "../hooks/usePolling";
 import { useSession } from "../session";
@@ -14,6 +15,7 @@ export default function Breakers() {
   const routeList = routes.result?.data ?? [];
   const breakerRoutes = routeList.filter((route) => route.circuit_breaker_state !== "disabled");
   const focusPath = routeList.find((route) => route.upstream === list[0]?.url)?.path_prefix;
+  const { transitions, markManual } = useTransitions(list);
 
   return (
     <>
@@ -30,6 +32,7 @@ export default function Breakers() {
         <div className="callout bad">The gateway is not answering, so breaker state is unavailable.</div>
       )}
 
+      <BreakerWalkthrough breakers={list} transitions={transitions} />
       <TrafficDriver routes={breakerRoutes} defaultPath={focusPath} />
 
       {list.map((breaker) => (
@@ -39,12 +42,14 @@ export default function Breakers() {
           routes={routeList}
           token={session?.accessToken ?? null}
           onChanged={breakers.refresh}
+          onManual={markManual}
         />
       ))}
       {breakers.result && list.length === 0 && !breakers.result.networkError && (
         <div className="card empty">No route has a circuit breaker enabled.</div>
       )}
 
+      <TransitionLog transitions={transitions} />
     </>
   );
 }

@@ -1308,3 +1308,91 @@ label.inline-label select {
   width: 10px;
   height: 14px;
 }
+
+/* Breaker walkthrough */
+
+.walkthrough {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.walkthrough li {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.walkthrough li.current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.walkthrough li.done {
+  opacity: 0.75;
+}
+
+.walk-marker {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.walkthrough li.done .walk-marker {
+  border-color: var(--ok);
+  background: var(--ok);
+  color: var(--surface);
+}
+
+.walkthrough li.current .walk-marker {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.transition-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.transition-log li {
+  display: grid;
+  grid-template-columns: 90px 180px 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 14px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 1000px) {
+  .walkthrough {
+    grid-template-columns: 1fr;
+  }
+
+  .transition-log li {
+    grid-template-columns: 1fr;
+  }
+}
