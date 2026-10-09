@@ -1396,3 +1396,56 @@ label.inline-label select {
     grid-template-columns: 1fr;
   }
 }
+
+/* Metrics */
+
+.metric-tile {
+  gap: 4px;
+}
+
+.sparkline {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  height: 36px;
+}
+
+.sparkline .baseline {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.sparkline .trend {
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sparkline .end {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.sparkline-empty {
+  height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+a.link-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+a.link-card:hover {
+  border-color: var(--accent);
+}

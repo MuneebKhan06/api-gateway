@@ -3,6 +3,7 @@ import Layout from "./components/Layout";
 import Auth from "./pages/Auth";
 import Breakers from "./pages/Breakers";
 import ComingSoon from "./pages/ComingSoon";
+import MetricsPage from "./pages/Metrics";
 import Overview from "./pages/Overview";
 import Playground from "./pages/Playground";
 import RateLimits from "./pages/RateLimits";
@@ -19,15 +20,7 @@ export default function App() {
             <Route path="playground" element={<Playground />} />
             <Route path="rate-limits" element={<RateLimits />} />
             <Route path="breakers" element={<Breakers />} />
-            <Route
-              path="metrics"
-              element={
-                <ComingSoon
-                  title="Metrics"
-                  summary="The gateway's own Prometheus metrics, read live from /metrics."
-                />
-              }
-            />
+            <Route path="metrics" element={<MetricsPage />} />
             <Route path="*" element={<ComingSoon title="Not found" summary="No page here." />} />
           </Route>
         </Routes>
