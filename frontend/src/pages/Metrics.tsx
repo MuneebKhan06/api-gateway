@@ -1,4 +1,5 @@
 import { gw } from "../api/client";
+import DecisionPanels from "../components/DecisionPanels";
 import Sparkline from "../components/Sparkline";
 import StatusPill from "../components/StatusPill";
 import { RATE_WINDOW_MS, SCRAPE_INTERVAL_MS, useMetrics, type Metrics } from "../hooks/useMetrics";
@@ -167,6 +168,8 @@ export default function MetricsPage() {
           comes from <code>gateway_upstream_health</code>, set each time <code>/health</code> runs.
         </p>
       </section>
+
+      <DecisionPanels metrics={metrics} />
 
       <section className="card">
         <div className="card-header">

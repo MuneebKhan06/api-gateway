@@ -1449,3 +1449,35 @@ a.link-card {
 a.link-card:hover {
   border-color: var(--accent);
 }
+
+/* Decision panels */
+
+.decision-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) 1fr 96px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+}
+
+.decision-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.decision-label .hint {
+  font-size: 12px;
+}
+
+.decision-value {
+  text-align: right;
+}
+
+.bench-bar.ok {
+  background: var(--ok);
+}
+
+.bench-bar.bad {
+  background: var(--bad);
+}
