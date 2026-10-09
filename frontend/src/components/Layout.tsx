@@ -1,7 +1,9 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { useEffect } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { usePolling } from "../hooks/usePolling";
 import { useSession } from "../session";
+import DemoTour, { useTour } from "./DemoTour";
 import StatusPill from "./StatusPill";
 import ThemeToggle from "./ThemeToggle";
 
@@ -46,6 +48,14 @@ export default function Layout() {
   // page below it is going to show errors, and this says why.
   const health = usePolling(api.health, 5000);
   const { session } = useSession();
+  const tour = useTour();
+  const { pathname } = useLocation();
+
+  // A new page starts at the top, whether it was reached from the sidebar or
+  // by the tour, rather than at the previous page's scroll position.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
   const status = health.result
     ? health.result.networkError
       ? "offline"
@@ -67,6 +77,11 @@ export default function Layout() {
         <div className="nav-section">Labs</div>
         <NavGroup items={LABS} />
         <div className="sidebar-footer">
+          {tour.step === null && (
+            <button type="button" className="primary tour-start" onClick={tour.start}>
+              Start demo tour
+            </button>
+          )}
           <ThemeToggle />
           <a href="https://github.com/MuneebKhan06/api-gateway" target="_blank" rel="noreferrer">
             Source on GitHub
@@ -100,6 +115,7 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+      <DemoTour tour={tour} />
     </div>
   );
 }
