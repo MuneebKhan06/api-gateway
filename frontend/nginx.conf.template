@@ -1,0 +1,67 @@
+# Serves the built console and forwards API calls, so the browser only ever
+# talks to one origin. This is what the Vite dev server's proxy does in
+# development (see vite.config.ts), and it means the gateway needs no CORS
+# configuration and every response header stays readable.
+#
+#   /gw/*                  -> the gateway, prefix stripped
+#   /upstream/service-a/*  -> the mock upstream directly, for fault injection
+#
+# The /upstream routes expose the mock services' /_control endpoints. That is
+# the point for a local demo and the reason this image is not something to
+# put in front of real services.
+
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+
+    # Resolve upstream names per request rather than once at start, so the
+    # console comes up even if the gateway container is still starting, and
+    # follows it if it is recreated with a new address.
+    resolver ${NGINX_RESOLVER} valid=10s ipv6=off;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $proxy_host;
+    # The gateway charges anonymous traffic to the address in
+    # X-Forwarded-For, the way it would behind a real load balancer.
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    location /gw/ {
+        set $gateway ${GATEWAY_URL};
+        rewrite ^/gw/(.*)$ /$1 break;
+        proxy_pass $gateway;
+    }
+
+    location /upstream/service-a/ {
+        set $service_a ${SERVICE_A_URL};
+        rewrite ^/upstream/service-a/(.*)$ /$1 break;
+        proxy_pass $service_a;
+    }
+
+    location /upstream/service-b/ {
+        set $service_b ${SERVICE_B_URL};
+        rewrite ^/upstream/service-b/(.*)$ /$1 break;
+        proxy_pass $service_b;
+    }
+
+    location /upstream/service-c/ {
+        set $service_c ${SERVICE_C_URL};
+        rewrite ^/upstream/service-c/(.*)$ /$1 break;
+        proxy_pass $service_c;
+    }
+
+    # Hashed file names change with their content, so they can be cached
+    # forever.
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # Client side routing: any other path is the app, which picks the page.
+    location / {
+        add_header Cache-Control "no-cache";
+        try_files $uri /index.html;
+    }
+}
