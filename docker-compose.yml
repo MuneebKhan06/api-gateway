@@ -134,6 +134,21 @@ services:
     depends_on:
       - prometheus
 
+  # The browser console for showing the gateway off. Static files behind
+  # nginx, which also proxies /gw to the gateway and /upstream to the mock
+  # services, so the browser talks to one origin and needs no CORS.
+  console:
+    build:
+      context: ./frontend
+    container_name: gateway-console
+    ports:
+      - "8080:80"
+    depends_on:
+      - gateway
+      - service-a
+      - service-b
+      - service-c
+
 volumes:
   redis-data:
   postgres-data:
