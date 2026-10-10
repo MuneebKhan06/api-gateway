@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { usePolling } from "../hooks/usePolling";
 import { useSession } from "../session";
 import DemoTour, { useTour } from "./DemoTour";
+import ErrorBoundary from "./ErrorBoundary";
 import StatusPill from "./StatusPill";
 import ThemeToggle from "./ThemeToggle";
 
@@ -112,7 +113,10 @@ export default function Layout() {
           </div>
         </header>
         <main className="content">
-          <Outlet />
+          {/* Keyed by path, so leaving a broken page clears the error. */}
+          <ErrorBoundary key={pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
       <DemoTour tour={tour} />
