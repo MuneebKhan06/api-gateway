@@ -18,6 +18,7 @@ no AWS API Gateway. The internals are built by hand.
 - [Project Structure](#project-structure)
 - [Architecture and Design Decisions](#architecture-and-design-decisions)
 - [Getting Started](#getting-started)
+- [Gateway Console](#gateway-console)
 - [API Reference](#api-reference)
 - [Development](#development)
 - [Benchmark Results](#benchmark-results)
@@ -65,6 +66,7 @@ The middleware order is deliberate and explained in
 | Prometheus | RED metrics, breaker state, auth and rate limit decisions |
 | Grafana | Pre-provisioned dashboard, no setup clicks |
 | Upstream services | Three mock services with fault injection controls |
+| Gateway Console | React frontend that drives and explains every feature live |
 
 ---
 
@@ -118,6 +120,10 @@ api-gateway/
 |   |-- schemas/                    # request and response models
 |
 |-- upstream/service_{a,b,c}/       # mock services with /_control fault injection
+|-- frontend/                       # Gateway Console: React, TypeScript, Vite
+|   |-- src/pages/                  # one page per feature, see Gateway Console below
+|   |-- nginx.conf.template         # serves the build, proxies /gw and /upstream
+|   |-- scripts/screenshots.mjs     # regenerates docs/screenshots with headless Chrome
 |-- alembic/versions/               # 0001 users and refresh tokens, 0002 audit log
 |-- tests/                          # 563 tests
 |-- load_tests/locustfile.py
@@ -131,6 +137,7 @@ api-gateway/
 |-- docker-compose.test.yml         # Redis and Postgres for the integration suite
 |-- routes.yaml                     # the route table
 |-- DEVLOG.md                       # daily notes, including what went wrong
+|-- docs/screenshots/               # console screenshots used below
 ```
 
 ---
@@ -409,8 +416,8 @@ cp .env.example .env
 docker compose up -d
 ```
 
-This starts Redis, Postgres, the gateway, three upstream services, Prometheus
-and Grafana.
+This starts Redis, Postgres, the gateway, three upstream services, Prometheus,
+Grafana and the Gateway Console on `http://localhost:8080`.
 
 ### 3. Create the schema
 
@@ -500,6 +507,82 @@ loaded. Prometheus is at `http://localhost:9090`.
 docker compose -f docker-compose.test.yml up -d
 python scripts/benchmark_algorithms.py --requests 10000 --concurrency 50 --markdown
 ```
+
+---
+
+## Gateway Console
+
+A browser frontend that exercises the gateway live, so every claim in this
+README can be shown rather than described. It talks to a running stack, not
+to mocks, and each page explains what just happened and why.
+
+With the stack up, open `http://localhost:8080` and press **Start demo tour**
+in the sidebar for a guided walk through every page.
+
+![Overview: health, dependencies, the request path and the route table](docs/screenshots/overview.png)
+
+| Page | What it demonstrates |
+|---|---|
+| Overview | Health of the gateway, Redis, Postgres and each upstream, the middleware order, and the live route table |
+| Authentication | Register and log in, decoded access and refresh tokens, refresh rotation (the old refresh token is replayed and refused), and logout (the logged out token is refused by the blacklist) |
+| Request playground | Any request through the gateway, with the middleware chain lit up to show which layer answered, every gateway header explained, and what the upstream actually received |
+| Rate limiting | Real bursts against each route, a timeline of `X-RateLimit-Remaining`, all three algorithms pushed past their limits at once, and the fixed window boundary problem replayed through ports of the Lua scripts |
+| Circuit breakers | Fault injection on each upstream, a live state machine, steady traffic showing failures turn into instant refusals, recovery through half open, and manual trip and reset |
+| Metrics | `/metrics` scraped and turned into rates like Prometheus would: request rate, errors, P95, gateway overhead, and every auth, rate limit and breaker decision |
+
+![Authentication: decoded tokens after a refresh rotated the pair](docs/screenshots/auth.png)
+
+![Request playground: the identity the upstream received, with the spoofed header stripped](docs/screenshots/playground.png)
+
+![Rate limiting: a burst of 110 against a token bucket of 100](docs/screenshots/rate-limits.png)
+
+![Circuit breakers: five upstream failures, then instant refusals while open](docs/screenshots/breakers.png)
+
+![Metrics: RED per upstream, computed from the gateway's own counters](docs/screenshots/metrics.png)
+
+### How it talks to the gateway
+
+The browser only ever talks to one origin. `/gw/*` is forwarded to the
+gateway and `/upstream/service-x/*` to the mock services' fault injection
+endpoints, by nginx in the container and by the Vite dev server in
+development. So the gateway needs no CORS configuration and every response
+header it sets stays readable, which is what the console is mostly showing.
+
+nginx also sets `X-Forwarded-For`, the way a load balancer in front of the
+gateway would, because the rate limiter charges anonymous traffic to that
+address. The `/upstream` routes exist for the demo and are the reason this
+image does not belong in front of real services.
+
+### Running it
+
+```bash
+# Part of the full stack
+docker compose up -d       # then browse to http://localhost:8080
+
+# Or in development, against a gateway already running on port 8000
+cd frontend
+npm install
+npm run dev                 # http://localhost:5173
+GATEWAY_URL=http://localhost:8010 npm run dev   # if the gateway is elsewhere
+```
+
+There is no separate test suite yet. TypeScript runs in strict mode and CI
+typechecks and builds the console on every push. The response types in
+`frontend/src/api/types.ts` mirror `gateway/schemas` by hand, so a change to
+the API still has to be carried over there; generating them from the OpenAPI
+schema is the obvious next step.
+
+### Regenerating the screenshots
+
+```bash
+docker compose up -d
+node frontend/scripts/screenshots.mjs
+```
+
+The script drives headless Chrome over the DevTools protocol with no
+dependencies. It signs in, fires a burst, breaks an upstream until its
+breaker opens and heals it again, then saves each page to
+`docs/screenshots/`.
 
 ---
 
