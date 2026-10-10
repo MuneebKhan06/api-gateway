@@ -109,6 +109,31 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://gateway:gateway@localhost:5432/gateway
         run: pytest tests/ -v -m integration
 
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Strict TypeScript is the console's test suite: the API client and
+      # every page are typed against the gateway's response shapes.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
   docker:
     runs-on: ubuntu-latest
     steps:
@@ -121,6 +146,9 @@ jobs:
 
       - name: Build upstream image
         run: docker build -f docker/Dockerfile.upstream -t api-gateway-upstream:ci .
+
+      - name: Build console image
+        run: docker build -t api-gateway-console:ci frontend
 
       - name: Validate compose file
         run: docker compose config --quiet
