@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ALGORITHMS, replay, spread, worstWindow, type Algorithm } from "../utils/simulate";
 import { algorithmLabel } from "../utils/format";
-import BurstChart from "./BurstChart";
+import BurstChart, { ChartLegend } from "./BurstChart";
 
 // The fixed window boundary problem, replayed through ports of all three Lua
 // scripts. Small numbers on purpose: 10 per 10 seconds shows the same shape
@@ -60,6 +60,9 @@ export default function BoundaryDemo() {
             ))}
           </select>
         </label>
+        <span style={{ marginLeft: "auto" }}>
+          <ChartLegend />
+        </span>
       </div>
 
       <div className="grid grid-3" style={{ marginTop: 14 }}>
@@ -89,6 +92,7 @@ export default function BoundaryDemo() {
                 xMax={WINDOW + 1.5}
                 height={180}
                 title={`${algorithmLabel(result.algorithm)} remaining`}
+                compact
                 markers={result.algorithm === "fixed_window" ? [{ x: WINDOW, label: "reset" }] : []}
               />
               <div className="hint">

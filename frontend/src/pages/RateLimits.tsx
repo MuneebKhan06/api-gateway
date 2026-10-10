@@ -17,7 +17,13 @@ export default function RateLimits() {
   const [selected, setSelected] = useState<string | null>(null);
   const [remaining, setRemaining] = useState<Record<string, BurstSample>>({});
 
-  const active = limited.find((route) => route.path_prefix === selected) ?? limited[0] ?? null;
+  // Token bucket is the gateway's default algorithm, so its route is the
+  // natural place to start a demo.
+  const active =
+    limited.find((route) => route.path_prefix === selected) ??
+    limited.find((route) => route.rate_limit?.algorithm === "token_bucket") ??
+    limited[0] ??
+    null;
 
   const recordSample = (route: RouteStatus, sample: BurstSample) =>
     setRemaining((current) => {

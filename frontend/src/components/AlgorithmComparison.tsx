@@ -4,7 +4,7 @@ import type { RouteStatus } from "../api/types";
 import { useSession } from "../session";
 import { runBurst, summarize, type BurstSample } from "../utils/burst";
 import { algorithmLabel, formatSeconds } from "../utils/format";
-import BurstChart from "./BurstChart";
+import BurstChart, { ChartLegend } from "./BurstChart";
 import { toPoints } from "./BurstRunner";
 
 interface AlgorithmComparisonProps {
@@ -71,7 +71,7 @@ export default function AlgorithmComparison({ routes, onSample }: AlgorithmCompa
 
       <div className="burst-controls">
         <label>
-          Overshoot past each limit
+          Past each limit by
           <select value={overshoot} onChange={(event) => setOvershoot(Number(event.target.value))}>
             <option value={10}>10 percent</option>
             <option value={20}>20 percent</option>
@@ -87,6 +87,9 @@ export default function AlgorithmComparison({ routes, onSample }: AlgorithmCompa
             Fire at all three
           </button>
         )}
+        <span style={{ marginLeft: "auto" }}>
+          <ChartLegend />
+        </span>
       </div>
 
       <div className="grid grid-3" style={{ marginTop: 14 }}>
@@ -111,6 +114,7 @@ export default function AlgorithmComparison({ routes, onSample }: AlgorithmCompa
                     xMax={longest}
                     height={180}
                     title={`${route.path_prefix} remaining`}
+                    compact
                   />
                   <div className="hint">
                     <strong>{summary.allowed}</strong> allowed, <strong>{summary.limited}</strong>{" "}

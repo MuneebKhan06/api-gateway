@@ -11,7 +11,15 @@ const PROMETHEUS_URL = `http://localhost:9090/graph?g0.expr=${encodeURIComponent
   "sum by (upstream) (rate(gateway_requests_total[1m]))",
 )}&g0.tab=0`;
 
-const PROXIED: LabelFilter = { upstream: (value) => value !== "gateway" };
+// Labels that are not an upstream: "gateway" for what it serves itself, and
+// "unmatched" for paths that match no route, which the gateway collapses into
+// one series so arbitrary URLs cannot create unbounded metrics.
+const NOT_PROXIED: Record<string, { label: string; note: string }> = {
+  gateway: { label: "gateway itself", note: "auth, health, metrics" },
+  unmatched: { label: "no route matched", note: "unknown paths and introspection, one series" },
+};
+
+const PROXIED: LabelFilter = { upstream: (value) => !(value in NOT_PROXIED) };
 
 function perSecond(value: number | null): string {
   if (value === null) return "...";
@@ -59,8 +67,8 @@ export default function MetricsPage() {
   const overhead = endToEnd !== null && upstreamTime !== null ? Math.max(0, endToEnd - upstreamTime) : null;
 
   const upstreams = latest
-    ? Object.keys(sumBy(latest, "gateway_requests_total", "upstream")).sort((a, b) =>
-        a === "gateway" ? 1 : b === "gateway" ? -1 : a.localeCompare(b),
+    ? Object.keys(sumBy(latest, "gateway_requests_total", "upstream")).sort(
+        (a, b) => Number(a in NOT_PROXIED) - Number(b in NOT_PROXIED) || a.localeCompare(b),
       )
     : [];
   const health = latest ? sumBy(latest, "gateway_upstream_health", "upstream") : {};
@@ -125,18 +133,19 @@ export default function MetricsPage() {
             <tbody>
               {upstreams.map((upstream) => {
                 const filter: LabelFilter = { upstream };
+                const own = NOT_PROXIED[upstream];
                 const total = average(metrics, "gateway_request_duration_seconds", filter);
                 const waiting = average(metrics, "gateway_upstream_duration_seconds", filter);
                 return (
                   <tr key={upstream}>
                     <td>
-                      <strong>{upstream === "gateway" ? "gateway itself" : upstream}</strong>
-                      {upstream === "gateway" && <div className="hint">auth, health, metrics</div>}
+                      <strong>{own ? own.label : upstream}</strong>
+                      {own && <div className="hint">{own.note}</div>}
                     </td>
                     <td className="mono">{perSecond(metrics.rate("gateway_requests_total", filter))}</td>
                     <td className="mono">{perSecond(metrics.rate("gateway_errors_total", filter))}</td>
                     <td className="mono">{ms(metrics.quantile(0.95, "gateway_request_duration_seconds", filter).value)}</td>
-                    {upstream === "gateway" ? (
+                    {own ? (
                       <>
                         <td className="hint">n/a</td>
                         <td className="hint">n/a</td>
@@ -149,7 +158,7 @@ export default function MetricsPage() {
                     )}
                     <td className="mono">{inFlight[upstream] ?? 0}</td>
                     <td>
-                      {upstream === "gateway" ? (
+                      {own ? (
                         <span className="hint">n/a</span>
                       ) : (
                         <StatusPill status={health[upstream] === 1 ? "healthy" : health[upstream] === 0 ? "unhealthy" : "unknown"} />

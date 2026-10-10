@@ -1090,10 +1090,6 @@ button.route-card.active {
   min-width: 0;
 }
 
-.comparison-cell .chart-legend button {
-  display: none;
-}
-
 /* Benchmark bars */
 
 .bench-row {

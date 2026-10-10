@@ -26,6 +26,32 @@ interface BurstChartProps {
   title: string;
   /** Optional vertical markers, e.g. a window boundary. */
   markers?: { x: number; label: string }[];
+  /**
+   * For small multiples: no caption, legend or table toggle. The group
+   * shows one shared ChartLegend instead, so cells do not repeat it.
+   */
+  compact?: boolean;
+}
+
+/** The two marker states, by shape as well as colour. */
+export function ChartLegend({ children }: { children?: React.ReactNode }) {
+  return (
+    <span className="chart-legend">
+      <span>
+        <svg width="12" height="12" aria-hidden="true">
+          <circle cx="6" cy="6" r="4.5" fill="var(--ok)" />
+        </svg>
+        allowed
+      </span>
+      <span>
+        <svg width="12" height="12" aria-hidden="true">
+          <path d="M2.5 2.5 L9.5 9.5 M9.5 2.5 L2.5 9.5" stroke="var(--bad)" strokeWidth="2.5" strokeLinecap="round" />
+        </svg>
+        429 refused
+      </span>
+      {children}
+    </span>
+  );
 }
 
 const WIDTH = 720;
@@ -58,6 +84,7 @@ export default function BurstChart({
   height = 220,
   title,
   markers = [],
+  compact = false,
 }: BurstChartProps) {
   const [hover, setHover] = useState<number | null>(null);
   const [showTable, setShowTable] = useState(false);
@@ -95,26 +122,16 @@ export default function BurstChart({
 
   return (
     <figure className="burst-chart">
-      <figcaption className="row">
-        <span className="hint">{title}</span>
-        <span className="chart-legend">
-          <span>
-            <svg width="12" height="12" aria-hidden="true">
-              <circle cx="6" cy="6" r="4.5" fill="var(--ok)" />
-            </svg>
-            allowed
-          </span>
-          <span>
-            <svg width="12" height="12" aria-hidden="true">
-              <path d="M2.5 2.5 L9.5 9.5 M9.5 2.5 L2.5 9.5" stroke="var(--bad)" strokeWidth="2.5" strokeLinecap="round" />
-            </svg>
-            429 refused
-          </span>
-          <button type="button" className="small" onClick={() => setShowTable((value) => !value)}>
-            {showTable ? "Chart" : "Table"}
-          </button>
-        </span>
-      </figcaption>
+      {!compact && (
+        <figcaption className="row">
+          <span className="hint">{title}</span>
+          <ChartLegend>
+            <button type="button" className="small" onClick={() => setShowTable((value) => !value)}>
+              {showTable ? "Chart" : "Table"}
+            </button>
+          </ChartLegend>
+        </figcaption>
+      )}
 
       {showTable ? (
         <div className="table-wrap chart-table">
